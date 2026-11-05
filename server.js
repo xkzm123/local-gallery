@@ -634,6 +634,12 @@ function lanAddresses() {
             out.push({ iface: name, ip: a.address });
         }
     }
+    // 私网地址排前面：VPN / 虚拟网卡（198.18.x、100.64.x）不该抢到第一行，
+    // 手机要输的永远是 192.168 / 10 / 172.16-31 那一个
+    const rank = (ip) => (/^192\.168\./.test(ip) ? 0
+        : /^10\./.test(ip) ? 1
+            : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3);
+    out.sort((a, b) => rank(a.ip) - rank(b.ip));
     return out;
 }
 
@@ -657,6 +663,102 @@ function readBody(req, limit) {
         });
         req.on('error', reject);
     });
+}
+
+// ---------------------------------------------------------------- 中转站
+// 文件直接落在磁盘目录里，按原文件名保存（同名自动加 (1)(2)），
+// 不做 TTL、不做鉴权 —— 局域网内谁打开页面谁就能看、能下、能删。
+const DROP_DIR = (() => {
+    const a = argv.find((x) => x.startsWith('--drop='));
+    return path.resolve(a ? a.slice('--drop='.length) : path.join(APP_DIR, '.drops'));
+})();
+
+/** 上传中的分片文件后缀，列表里不显示 */
+const PART_SUFFIX = '.part';
+const dropClients = new Set();
+
+function dropDir() {
+    try { fs.mkdirSync(DROP_DIR, { recursive: true }); } catch (e) { }
+    return DROP_DIR;
+}
+
+/** 把任意文件名洗成 Windows / macOS 都能落盘的形式 */
+function safeDropName(raw) {
+    let t = String(raw == null ? '' : raw)
+        .replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim();
+    t = t.replace(/^[.\s]+/, '').replace(/[.\s]+$/, '');
+    if (!t) t = 'file';
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(t)) t = '_' + t;
+    if (t.length > 120) {
+        const ext = path.extname(t).slice(0, 12);
+        t = t.slice(0, 120 - ext.length) + ext;
+    }
+    return t;
+}
+
+/** 同名文件自动加 (1)(2)…，不覆盖已有文件 */
+function uniqueDropName(name) {
+    const dir = dropDir();
+    const ext = path.extname(name);
+    const stem = name.slice(0, name.length - ext.length);
+    let cand = name;
+    for (let i = 1; i < 1000; i++) {
+        if (!fs.existsSync(path.join(dir, cand))) return cand;
+        cand = stem + ' (' + i + ')' + ext;
+    }
+    return Date.now() + '-' + name;
+}
+
+/** 分片文件名带上总大小：同名但不同内容的两份文件不会互相拼接 */
+function partPath(name, total) {
+    return path.join(dropDir(), name + '.' + (Number(total) || 0) + PART_SUFFIX);
+}
+
+/** 把名字解析成绝对路径，并保证不跑出中转目录 */
+function dropPath(name) {
+    const dir = dropDir();
+    const abs = path.resolve(dir, name);
+    const rel = path.relative(dir, abs);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw fail(403, 'bad name');
+    return abs;
+}
+
+async function listDrops() {
+    const dir = dropDir();
+    const ents = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+    const files = [];
+    let bytes = 0;
+    for (const e of ents) {
+        if (!e.isFile() || e.name.endsWith(PART_SUFFIX)) continue;
+        let st;
+        try { st = await fsp.stat(path.join(dir, e.name)); } catch (err) { continue; }
+        files.push({
+            n: e.name,
+            s: st.size,
+            t: Math.round(st.mtimeMs),
+            u: '/d/' + encodeURIComponent(e.name),
+        });
+        bytes += st.size;
+    }
+    files.sort((a, b) => b.t - a.t);
+    return { dir, files, total: files.length, bytes, lan: lanAddresses(), port: PORT };
+}
+
+function broadcastDrops() {
+    if (!dropClients.size) return;
+    listDrops().then((d) => {
+        const msg = 'data: ' + JSON.stringify(d) + '\n\n';
+        for (const c of dropClients) { try { c.write(msg); } catch (e) { } }
+    }).catch(() => { });
+}
+
+/** RFC 6266：中文名走 filename*，同时给一个纯 ASCII 的兜底名 */
+function contentDisposition(name) {
+    const ascii = String(name).replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+    const enc = encodeURIComponent(name).replace(/['()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+    return 'attachment; filename="' + ascii + '"; filename*=UTF-8' + "''" + enc;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -746,6 +848,109 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // ------------------------------------------------ 中转站
+        if (p === '/api/drop/list') {
+            sendJSON(req, res, 200, await listDrops());
+            return;
+        }
+
+        // SSE：别的设备传完 / 删完，这边列表自动刷新
+        if (p === '/api/drop/events') {
+            res.writeHead(200, {
+                'Content-Type': 'text/event-stream; charset=utf-8',
+                'Cache-Control': 'no-store',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no',
+            });
+            dropClients.add(res);
+            const push = () => {
+                listDrops().then((d) => { try { res.write('data: ' + JSON.stringify(d) + '\n\n'); } catch (e) { } }).catch(() => { });
+            };
+            push();
+            const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) { } }, 15000);
+            req.on('close', () => { clearInterval(ping); dropClients.delete(res); });
+            return;
+        }
+
+        // 断点续传：问一下已经收了多少字节（HEAD 没有 body，所以两个都支持，HEAD 走 X-Received 头）
+        if (p === '/api/drop/upload' && (req.method === 'GET' || req.method === 'HEAD')) {
+            const name = safeDropName(u.searchParams.get('name') || '');
+            const total = Number(u.searchParams.get('size') || 0);
+            let have = 0;
+            try { have = (await fsp.stat(partPath(name, total))).size; } catch (e) { }
+            res.setHeader('X-Received', String(have));
+            sendJSON(req, res, 200, { name, received: have });
+            return;
+        }
+
+        // 分片上传：裸 body + Content-Range，不用 multipart，也不经过内存缓冲
+        if (p === '/api/drop/upload' && (req.method === 'PUT' || req.method === 'POST')) {
+            const name = safeDropName(u.searchParams.get('name') || '');
+            const m = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(String(req.headers['content-range'] || ''));
+            if (!m) throw fail(400, 'need Content-Range: bytes a-b/total');
+            const start = Number(m[1]);
+            const total = Number(m[3]);
+            const part = partPath(name, total);
+
+            let have = 0;
+            try { have = (await fsp.stat(part)).size; } catch (e) { }
+            if (have !== start) { sendJSON(req, res, 409, { expect: have, name }); return; }
+
+            const ws = fs.createWriteStream(part, { flags: start === 0 ? 'w' : 'a' });
+            await new Promise((resolve, reject) => {
+                ws.on('error', reject);
+                ws.on('finish', resolve);
+                req.on('aborted', () => { ws.destroy(); reject(fail(499, 'aborted')); });
+                req.pipe(ws);          // pipe 自带背压，几 GB 也不会把内存撑爆
+            });
+
+            let size = 0;
+            try { size = (await fsp.stat(part)).size; } catch (e) { }
+            if (total && size >= total) {
+                const final = uniqueDropName(name);
+                await fsp.rename(part, path.join(dropDir(), final));
+                broadcastDrops();
+                sendJSON(req, res, 200, { done: true, name: final, size, received: size });
+            } else {
+                sendJSON(req, res, 200, { done: false, name, received: size });
+            }
+            return;
+        }
+
+        if (p === '/api/drop/file' && req.method === 'DELETE') {
+            const abs = dropPath(safeDropName(u.searchParams.get('name') || ''));
+            let ok = true;
+            try { await fsp.unlink(abs); } catch (e) { ok = false; }
+            if (!ok) throw fail(404, '文件不存在');
+            broadcastDrops();
+            sendJSON(req, res, 200, { ok: true });
+            return;
+        }
+
+        if (p === '/api/drop/all' && req.method === 'DELETE') {
+            const dir = dropDir();
+            const ents = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+            let removed = 0;
+            for (const e of ents) {
+                if (!e.isFile()) continue;
+                try { await fsp.unlink(path.join(dir, e.name)); removed++; } catch (err) { }
+            }
+            broadcastDrops();
+            sendJSON(req, res, 200, { ok: true, removed });
+            return;
+        }
+
+        // 下载：直接复用 sendFile，Range / 206 / 416 都是现成的
+        if (p.startsWith('/d/')) {
+            const raw = decodeURIComponent(p.slice(3));
+            const abs = dropPath(safeDropName(raw));
+            const st = await fsp.stat(abs).catch(() => null);
+            if (!st || !st.isFile()) throw fail(404, '文件不存在');
+            res.setHeader('Content-Disposition', contentDisposition(path.basename(abs)));
+            sendFile(req, res, abs, st, 'no-store');
+            return;
+        }
+
         if (p === '/api/drives') {
             const places = quickPlaces();
             let drives = [];
@@ -785,6 +990,7 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        if (p === '/drop' || p === '/drop/') { servePublic(req, res, '/drop.html'); return; }
         if (p.startsWith('/api/')) { sendJSON(req, res, 404, { error: 'no such api' }); return; }
 
         servePublic(req, res, p);
@@ -866,6 +1072,7 @@ function startListening(attempt) {
             console.log('  |  Library : (not set)  -> pick it in the web page');
         }
         console.log('  |  Config  : ' + CONFIG_PATH);
+        console.log('  |  Drop    : ' + DROP_DIR);
         console.log('  |  Local   : http://localhost:' + PORT);
         for (const a of lan) console.log('  |  LAN     : http://' + a.ip + ':' + PORT);
         console.log('  +---------------------------------------------');
@@ -876,4 +1083,6 @@ function startListening(attempt) {
 }
 
 readConfig();
+// 中转站要传大文件：Node 18+ 默认 requestTimeout = 300000ms，慢 WiFi 传几 GB 必被掐断
+server.requestTimeout = 0;
 startListening(0);

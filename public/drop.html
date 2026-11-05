@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>中转站 · 本地图库</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111' stroke-width='1.8'><path d='M12 16V4M7 9l5-5 5 5'/><path d='M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3'/></svg>">
+<style>
+  body { padding-bottom: 40px; }
+  #dropMain { margin: 0 auto; max-width: 920px; padding: 18px 16px 60px; }
+
+  /* 顶部那行局域网地址 */
+  .lan-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    max-width: 44vw; padding: 5px 10px;
+    border: 1px solid var(--line); border-radius: 99px;
+    background: var(--soft); color: var(--fg-dim);
+    font: 11.5px/1 ui-monospace, Menlo, Consolas, monospace;
+    cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .lan-chip:hover { color: var(--fg); border-color: var(--line-strong); }
+
+  /* 拖放区 */
+  .dz {
+    border: 1.5px dashed var(--line-strong);
+    border-radius: 12px;
+    padding: 46px 20px;
+    text-align: center;
+    background: var(--panel);
+    cursor: pointer;
+    transition: border-color .15s, background .15s, transform .15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .dz:hover { border-color: var(--fg-mute); background: var(--soft); }
+  .dz.over { border-color: var(--fg); background: var(--soft); transform: scale(.995); }
+  .dz-ico { font-size: 26px; line-height: 1; color: var(--fg-dim); margin-bottom: 12px; }
+  .dz-t { font-size: 15px; font-weight: 600; color: var(--fg); }
+  .dz-s { font-size: 12px; color: var(--fg-mute); margin-top: 6px; line-height: 1.7; }
+
+  .sec-t { font-size: 12px; font-weight: 600; color: var(--fg-dim); letter-spacing: .02em; }
+  .sec-t b { font-weight: 400; color: var(--fg-mute); margin-left: 6px; }
+  .sec-head { display: flex; align-items: center; gap: 8px; margin: 26px 0 10px; }
+  .sec-head .btn { width: auto; }
+
+  /* 上传队列 */
+  .qrow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; margin-bottom: 6px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel);
+  }
+  .qrow .qname {
+    flex: 1; min-width: 0; font-size: 12.5px; color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .qrow .qstat { flex: none; font-size: 11px; color: var(--fg-mute); font-variant-numeric: tabular-nums; }
+  .qbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--line); }
+  .qbar i { display: block; height: 100%; width: 0; background: var(--fg); transition: width .12s linear; }
+  .qrow { position: relative; overflow: hidden; }
+  .qrow.ok .qstat { color: #12805c; }
+  .qrow.err .qstat { color: #c0392b; }
+  html[data-theme="dark"] .qrow.ok .qstat { color: #4ade80; }
+  html[data-theme="dark"] .qrow.err .qstat { color: #f87171; }
+
+  /* 文件列表 */
+  .dlist { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+  .drow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 12px; border-bottom: 1px solid var(--line);
+  }
+  .drow:last-child { border-bottom: 0; }
+  .drow:hover { background: var(--soft); }
+  .dico { flex: none; width: 30px; height: 30px; border-radius: 6px; background: var(--soft);
+          display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--fg-dim); }
+  .dmain { flex: 1; min-width: 0; }
+  .dname { font-size: 13px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dmeta { font-size: 10.5px; color: var(--fg-mute); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .dact { flex: none; display: flex; gap: 4px; }
+  .dact a, .dact button {
+    appearance: none; border: 1px solid var(--line); background: var(--bg); color: var(--fg-dim);
+    border-radius: 6px; padding: 6px 11px; font: inherit; font-size: 11.5px; cursor: pointer;
+    text-decoration: none; white-space: nowrap;
+  }
+  .dact a:hover, .dact button:hover { background: var(--hover); color: var(--fg); }
+  .dact a.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  .dact a.primary:hover { opacity: .88; color: var(--accent-fg); }
+  .empty-row { padding: 34px 14px; text-align: center; color: var(--fg-mute); font-size: 12px; line-height: 1.9; }
+
+  .hint-line { margin-top: 14px; font-size: 11px; color: var(--fg-mute); line-height: 1.8; }
+  .hint-line code { background: var(--soft); padding: 1px 5px; border-radius: 4px; font-size: 10.5px; }
+
+  @media (max-width: 760px) {
+    #dropMain { padding: 12px 10px 80px; }
+    .dz { padding: 34px 14px; }
+    .lan-chip { max-width: 52vw; font-size: 10.5px; }
+    .dact a, .dact button { padding: 7px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <div id="titleWrap">
+    <span id="docTitle">中转站</span>
+    <span id="docMeta"></span>
+  </div>
+  <div class="tb-spacer"></div>
+  <span id="lanChip" class="lan-chip" title="点一下复制这个地址，发给同一 WiFi 下的手机">读取地址…</span>
+  <a class="ibtn" href="/" title="回到图库">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+  </a>
+  <button id="btnTheme" class="ibtn" title="深色 / 浅色">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" stroke="none"/></svg>
+  </button>
+</header>
+
+<main id="dropMain">
+
+  <div id="dropZone" class="dz">
+    <div class="dz-ico">&#8679;</div>
+    <div class="dz-t">把文件拖到这里</div>
+    <div class="dz-s">或者点一下选文件 · 手机可以直接选照片 / 视频<br>传完的文件会留在电脑上，谁打开这个页面都能下</div>
+  </div>
+  <input id="fileInput" type="file" multiple hidden>
+
+  <section id="queueWrap" hidden>
+    <div class="sec-head"><span class="sec-t">正在上传</span></div>
+    <div id="queue"></div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-t">已收到的文件 <b id="listMeta" class="mono"></b></span>
+      <div class="tb-spacer"></div>
+      <button id="btnClear" class="btn small ghost">清空</button>
+    </div>
+    <div id="list" class="dlist"><div class="empty-row">正在读取…</div></div>
+    <div class="hint-line" id="dirHint"></div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const CHUNK = 4 * 1024 * 1024;     // 4 MiB 一片
+
+  let toastTimer = 0;
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('on'), 1800);
+  }
+
+  function fmtSize(n) {
+    if (!n) return '0 B';
+    const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i ? n.toFixed(1) : Math.round(n)) + ' ' + u[i];
+  }
+
+  function fmtAgo(ms) {
+    const d = Math.max(0, Date.now() - ms);
+    if (d < 60e3) return '刚刚';
+    if (d < 3600e3) return Math.floor(d / 60e3) + ' 分钟前';
+    if (d < 86400e3) return Math.floor(d / 3600e3) + ' 小时前';
+    const dt = new Date(ms);
+    return (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' +
+      String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+  }
+
+  function iconFor(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    if (/^(png|jpe?g|gif|webp|bmp|avif|heic)$/.test(ext)) return 'IMG';
+    if (/^(mp4|mov|mkv|avi|webm)$/.test(ext)) return 'VID';
+    if (/^(mp3|flac|wav|m4a|aac)$/.test(ext)) return 'AUD';
+    if (/^(zip|rar|7z|tar|gz)$/.test(ext)) return 'ZIP';
+    if (/^(pdf|docx?|xlsx?|pptx?|txt|md)$/.test(ext)) return 'DOC';
+    return 'FILE';
+  }
+
+  // ---------------------------------------------------------- 主题
+  function applyTheme(dark) {
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    const m = document.querySelector('meta[name=theme-color]');
+    if (m) m.setAttribute('content', dark ? '#0d0e10' : '#ffffff');
+  }
+  let dark = false;
+  try { dark = localStorage.getItem('gallery-theme') === 'dark'; } catch (e) { }
+  applyTheme(dark);
+  $('#btnTheme').addEventListener('click', () => {
+    dark = !dark;
+    applyTheme(dark);
+    try { localStorage.setItem('gallery-theme', dark ? 'dark' : 'light'); } catch (e) { }
+  });
+
+  // ---------------------------------------------------------- 列表
+  function render(d) {
+    const list = $('#list');
+    const meta = $('#listMeta');
+    meta.textContent = d.total ? d.total + ' 个 · ' + fmtSize(d.bytes) : '';
+    const hint = $('#dirHint');
+    if (d.dir) hint.innerHTML = '文件保存在 <code>' + escapeHtml(d.dir) + '</code>，直接用资源管理器打开就能拿。';
+
+    list.innerHTML = '';
+    if (!d.files || !d.files.length) {
+      const e = document.createElement('div');
+      e.className = 'empty-row';
+      e.innerHTML = '还没有文件。<br>上面拖一个进来，另一台设备刷新就能看到。';
+      list.appendChild(e);
+      return;
+    }
+    for (const f of d.files) {
+      const row = document.createElement('div');
+      row.className = 'drow';
+
+      const ico = document.createElement('div');
+      ico.className = 'dico';
+      ico.textContent = iconFor(f.n);
+
+      const main = document.createElement('div');
+      main.className = 'dmain';
+      const nm = document.createElement('div');
+      nm.className = 'dname';
+      nm.textContent = f.n;
+      nm.title = f.n;
+      const mt = document.createElement('div');
+      mt.className = 'dmeta';
+      mt.textContent = fmtSize(f.s) + ' · ' + fmtAgo(f.t);
+      main.append(nm, mt);
+
+      const act = document.createElement('div');
+      act.className = 'dact';
+      const a = document.createElement('a');
+      a.className = 'primary';
+      a.href = f.u;
+      a.setAttribute('download', f.n);
+      a.textContent = '下载';
+      const del = document.createElement('button');
+      del.textContent = '删除';
+      del.addEventListener('click', () => removeFile(f.n));
+      act.append(a, del);
+
+      row.append(ico, main, act);
+      list.appendChild(row);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch('/api/drop/list');
+      render(await r.json());
+    } catch (e) {
+      $('#list').innerHTML = '<div class="empty-row">读不到列表，服务是不是停了？</div>';
+    }
+  }
+
+  async function removeFile(name) {
+    if (!confirm('删除「' + name + '」？文件会从磁盘上删掉。')) return;
+    try {
+      const r = await fetch('/api/drop/file?name=' + encodeURIComponent(name), { method: 'DELETE' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      toast('已删除');
+      refresh();
+    } catch (e) { toast('删除失败：' + e.message); }
+  }
+
+  $('#btnClear').addEventListener('click', async () => {
+    if (!confirm('清空中转站里的全部文件？')) return;
+    try {
+      const r = await fetch('/api/drop/all', { method: 'DELETE' });
+      const j = await r.json();
+      toast('已清空 ' + (j.removed || 0) + ' 个文件');
+      refresh();
+    } catch (e) { toast('清空失败：' + e.message); }
+  });
+
+  // ---------------------------------------------------------- 上传
+  function addRow(file) {
+    $('#queueWrap').hidden = false;
+    const row = document.createElement('div');
+    row.className = 'qrow';
+    const nm = document.createElement('div');
+    nm.className = 'qname';
+    nm.textContent = file.name;
+    const st = document.createElement('div');
+    st.className = 'qstat';
+    st.textContent = '等待…';
+    const bar = document.createElement('div');
+    bar.className = 'qbar';
+    const fill = document.createElement('i');
+    bar.appendChild(fill);
+    row.append(nm, st, bar);
+    $('#queue').appendChild(row);
+
+    return {
+      row,
+      set(pct, text, cls) {
+        fill.style.width = Math.max(0, Math.min(100, pct * 100)).toFixed(1) + '%';
+        st.textContent = text;
+        row.className = 'qrow' + (cls ? ' ' + cls : '');
+      },
+      finish(text, cls) {
+        this.set(1, text, cls);
+        setTimeout(() => { try { row.remove(); } catch (e) { } }, cls === 'err' ? 6000 : 2500);
+      },
+    };
+  }
+
+  function putChunk(name, blob, start, end, total, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', '/api/drop/upload?name=' + encodeURIComponent(name));
+      xhr.setRequestHeader('Content-Range', 'bytes ' + start + '-' + (end - 1) + '/' + total);
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded); };
+      xhr.onload = () => {
+        let body = null;
+        try { body = JSON.parse(xhr.responseText); } catch (e) { }
+        resolve({ status: xhr.status, body: body || {} });
+      };
+      xhr.onerror = () => reject(new Error('网络中断'));
+      xhr.ontimeout = () => reject(new Error('超时'));
+      xhr.send(blob);
+    });
+  }
+
+  async function uploadOne(file) {
+    const row = addRow(file);
+    const t0 = performance.now();
+    let off = 0;
+
+    // 断点续传：先问服务端已经收了多少
+    try {
+      const r = await fetch('/api/drop/upload?name=' + encodeURIComponent(file.name) + '&size=' + file.size);
+      const j = await r.json();
+      if (j && j.received > 0 && j.received < file.size) {
+        off = j.received;
+        toast('「' + file.name + '」从 ' + fmtSize(off) + ' 处续传');
+      }
+    } catch (e) { }
+
+    const base = off;
+    while (off < file.size) {
+      const end = Math.min(off + CHUNK, file.size);
+      const blob = file.slice(off, end);
+      const chunkStart = off;
+
+      let res;
+      try {
+        res = await putChunk(file.name, blob, off, end, file.size, (loaded) => {
+          const done = chunkStart + loaded;
+          const sec = Math.max(0.001, (performance.now() - t0) / 1000);
+          const speed = (done - base) / sec;
+          const left = speed > 0 ? (file.size - done) / speed : 0;
+          row.set(done / file.size,
+            fmtSize(done) + ' / ' + fmtSize(file.size) + '  ·  ' + fmtSize(speed) + '/s  ·  剩 ' + fmtLeft(left));
+        });
+      } catch (e) {
+        row.finish('中断：' + e.message, 'err');
+        return false;
+      }
+
+      if (res.status === 409) {
+        off = Number(res.body.expect) || 0;
+        continue;
+      }
+      if (res.status < 200 || res.status >= 300) {
+        row.finish('失败：HTTP ' + res.status + (res.body.error ? ' ' + res.body.error : ''), 'err');
+        return false;
+      }
+      if (res.body.done) {
+        const sec = Math.max(0.001, (performance.now() - t0) / 1000);
+        row.finish('完成 · ' + fmtSize(file.size) + ' · ' + fmtSize(file.size / sec) + '/s', 'ok');
+        return true;
+      }
+      off = end;
+    }
+    row.finish('完成', 'ok');
+    return true;
+  }
+
+  function fmtLeft(sec) {
+    if (!isFinite(sec) || sec <= 0) return '--';
+    if (sec < 60) return Math.ceil(sec) + 's';
+    if (sec < 3600) return Math.ceil(sec / 60) + 'm';
+    return (sec / 3600).toFixed(1) + 'h';
+  }
+
+  let uploading = false;
+  const pending = [];
+
+  async function pump() {
+    if (uploading) return;
+    uploading = true;
+    while (pending.length) {
+      const file = pending.shift();
+      try { await uploadOne(file); } catch (e) { toast('上传出错：' + e.message); }
+    }
+    uploading = false;
+    refresh();
+  }
+
+  function enqueue(files) {
+    const arr = Array.from(files || []);
+    if (!arr.length) return;
+    for (const f of arr) pending.push(f);
+    pump();
+  }
+
+  // ---------------------------------------------------------- 拖放 / 选择
+  const zone = $('#dropZone');
+  const input = $('#fileInput');
+
+  zone.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => { enqueue(input.files); input.value = ''; });
+
+  let depth = 0;
+  const hasFiles = (dt) => Array.from((dt && dt.types) || []).indexOf('Files') >= 0;
+  window.addEventListener('dragenter', (e) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    depth++;
+    zone.classList.add('over');
+  });
+  window.addEventListener('dragover', (e) => { if (hasFiles(e.dataTransfer)) e.preventDefault(); });
+  window.addEventListener('dragleave', () => {
+    depth = Math.max(0, depth - 1);
+    if (!depth) zone.classList.remove('over');
+  });
+  window.addEventListener('drop', (e) => {
+    if (!hasFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    depth = 0;
+    zone.classList.remove('over');
+    enqueue(e.dataTransfer.files);
+  });
+
+  // ---------------------------------------------------------- 局域网地址
+  (async function boot() {
+    try {
+      const r = await fetch('/api/drop/list');
+      const d = await r.json();
+      render(d);
+      const ip = (d.lan && d.lan[0] && d.lan[0].ip) || location.hostname;
+      const url = 'http://' + ip + ':' + d.port + '/drop';
+      const chip = $('#lanChip');
+      chip.textContent = url;
+      chip.title = '点一下复制，发给同一 WiFi 下的手机';
+      chip.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          toast('已复制：' + url);
+        } catch (e) {
+          toast(url);
+        }
+      });
+    } catch (e) {
+      $('#list').innerHTML = '<div class="empty-row">连不上服务，确认命令行窗口还开着。</div>';
+    }
+
+    // 实时刷新：别的设备传完 / 删完，这边立刻变
+    try {
+      const es = new EventSource('/api/drop/events');
+      es.onmessage = (ev) => {
+        try { render(JSON.parse(ev.data)); } catch (e) { }
+      };
+      es.onerror = () => { /* 浏览器会自己重连 */ };
+    } catch (e) { }
+  })();
+})();
+</script>
+</body>
+</html>
