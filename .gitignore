@@ -20,3 +20,6 @@ dist/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 「发送到」脚本（安装时生成）
+tools/

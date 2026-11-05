@@ -995,6 +995,9 @@ function dropPath(name) {
 // 只有「手机上传来」的文件才落盘到 DROP_DIR，落盘后同样登记成一条路径记录。
 const DROP_DB = path.join(APP_DIR, '.drops.json');
 const HASH_MAX = 512 * 1024 * 1024;   // 超过这个大小不在添加时自动算 md5，交给「校验」按钮
+// 上传默认关闭：浏览器读不到拖进来的文件的真实路径，只能把字节传上来 = 复制一份。
+// 真要用手机往电脑传文件，再显式加 --allow-upload。
+const ALLOW_UPLOAD = argv.includes('--allow-upload');
 
 let dropItems = [];                   // [{ id, path, name, size, mtime, hash, hashAt, addedAt, source }]
 let dropSaveTimer = 0;
@@ -1278,6 +1281,48 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // 安装「发送到」快捷方式：右键任意文件 → 发送到 → 本地图库中转站
+        // 这是浏览器之外唯一能做到「拖一下就登记、一个字节都不复制」的入口
+        if (p === '/api/drop/install-sendto' && req.method === 'POST') {
+            if (process.platform !== 'win32') throw fail(400, '这个功能只在 Windows 上有意义');
+            const sendTo = path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'SendTo');
+            if (!isDir(sendTo)) throw fail(404, '找不到「发送到」目录：' + sendTo);
+
+            // 1) 真正的逻辑放在 ps1 里：用 -File 调用时 $args 才拿得到路径
+            const toolsDir = path.join(APP_DIR, 'tools');
+            try { fs.mkdirSync(toolsDir, { recursive: true }); } catch (e) { }
+            const ps1 = path.join(toolsDir, 'sendto.ps1');
+            const psLines = [
+                'param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Paths)',
+                'if (-not $Paths -or $Paths.Count -eq 0) { exit 0 }',
+                '$body = @{ paths = @($Paths) } | ConvertTo-Json -Compress',
+                // PowerShell 5.1 里 -Body 传字符串会按 ASCII 发出去，中文路径会变乱码；
+                // 必须自己转成 UTF-8 字节，再声明 charset
+                '$bytes = [System.Text.Encoding]::UTF8.GetBytes($body)',
+                'try {',
+                "  Invoke-RestMethod -Uri 'http://127.0.0.1:" + PORT + "/api/drop/add' -Method Post "
+                    + "-ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 8 | Out-Null",
+                '} catch { }',
+                'exit 0',
+                '',
+            ];
+            fs.writeFileSync(ps1, psLines.join('\r\n'), 'utf8');
+
+            // 2) SendTo 里只放一个瘦壳；注意必须是 CRLF，
+            //    chcp 之后接 LF 换行会让 cmd 的解析器吃字符（实测会少掉首字母）
+            const target = path.join(sendTo, '本地图库中转站.cmd');
+            const cmdLines = [
+                '@echo off',
+                'chcp 65001 >nul',
+                'powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + ps1 + '" %*',
+                '',
+            ];
+            fs.writeFileSync(target, cmdLines.join('\r\n'), 'utf8');
+
+            sendJSON(req, res, 200, { ok: true, path: target, script: ps1 });
+            return;
+        }
+
         // 校验：重新算 md5，和登记时的基线比对
         if (p === '/api/drop/verify' && req.method === 'POST') {
             const body = await readBody(req).catch(() => ({}));
@@ -1306,6 +1351,7 @@ const server = http.createServer(async (req, res) => {
 
         // 断点续传：问一下已经收了多少字节（HEAD 没有 body，所以两个都支持，HEAD 走 X-Received 头）
         if (p === '/api/drop/upload' && (req.method === 'GET' || req.method === 'HEAD')) {
+            if (!ALLOW_UPLOAD) throw fail(403, '上传已关闭：启动时加 --allow-upload 才会写盘');
             const name = safeDropName(u.searchParams.get('name') || '');
             const total = Number(u.searchParams.get('size') || 0);
             let have = 0;
@@ -1317,6 +1363,7 @@ const server = http.createServer(async (req, res) => {
 
         // 分片上传：裸 body + Content-Range，不用 multipart，也不经过内存缓冲
         if (p === '/api/drop/upload' && (req.method === 'PUT' || req.method === 'POST')) {
+            if (!ALLOW_UPLOAD) throw fail(403, '上传已关闭：启动时加 --allow-upload 才会写盘');
             const name = safeDropName(u.searchParams.get('name') || '');
             const m = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(String(req.headers['content-range'] || ''));
             if (!m) throw fail(400, 'need Content-Range: bytes a-b/total');

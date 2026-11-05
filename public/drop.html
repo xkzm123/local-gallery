@@ -33,16 +33,13 @@
   .addrow .sp { flex: 1; }
   .addrow .tip { font-size: 11px; color: var(--fg-mute); }
 
-  .dz {
-    margin-top: 12px;
-    border: 1.5px dashed var(--line-strong); border-radius: 10px;
-    padding: 18px 16px; text-align: center; cursor: pointer;
-    background: transparent; transition: border-color .15s, background .15s;
-    -webkit-tap-highlight-color: transparent;
+  .why {
+    margin-top: 10px; padding: 10px 12px;
+    border-left: 2px solid var(--line-strong);
+    background: var(--soft); border-radius: 0 6px 6px 0;
+    font-size: 11.5px; line-height: 1.85; color: var(--fg-dim);
   }
-  .dz:hover, .dz.over { border-color: var(--fg-mute); background: var(--soft); }
-  .dz-t { font-size: 13px; color: var(--fg-dim); }
-  .dz-s { font-size: 11px; color: var(--fg-mute); margin-top: 4px; }
+  .why b { color: var(--fg); font-weight: 600; }
 
   .sec-head { display: flex; align-items: center; gap: 8px; margin: 24px 0 10px; flex-wrap: wrap; }
   .sec-t { font-size: 12px; font-weight: 600; color: var(--fg-dim); }
@@ -130,21 +127,17 @@
     <div class="addrow">
       <button id="btnAdd" class="btn primary small">添加</button>
       <button id="btnPick" class="btn small ghost">浏览文件…</button>
+      <button id="btnSendTo" class="btn small ghost">装一个右键「发送到」</button>
       <span class="sp"></span>
       <span class="tip">只登记路径，不复制文件</span>
     </div>
   </div>
 
-  <div id="dropZone" class="dz">
-    <div class="dz-t">手机上要传文件？拖到这里 / 点一下选</div>
-    <div class="dz-s">只有这条会真的写盘（存到 .drops），传完同样出现在下面的列表里</div>
+  <div class="why">
+    <b>为什么没有「拖进来」？</b> 浏览器出于安全，拿不到从资源管理器拖进来的文件的真实路径（只能拿到内容）。
+    要把内容拿过来，就必须把整个文件传一遍——那就是复制。所以这里只登记路径：
+    粘一个路径、点「浏览文件…」挑一个，或者装一个右键菜单（<b>右键任意文件 → 发送到 → 本地图库中转站</b>），一个字节都不复制。
   </div>
-  <input id="fileInput" type="file" multiple hidden>
-
-  <section id="queueWrap" hidden>
-    <div class="sec-head"><span class="sec-t">正在上传</span></div>
-    <div id="queue"></div>
-  </section>
 
   <div class="sec-head">
     <span class="sec-t">已登记 <b id="listMeta"></b></span>
@@ -183,7 +176,6 @@
 (function () {
   'use strict';
   const $ = (s) => document.querySelector(s);
-  const CHUNK = 4 * 1024 * 1024;
 
   let toastTimer = 0;
   function toast(msg) {
@@ -191,7 +183,7 @@
     t.textContent = msg;
     t.classList.add('on');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('on'), 2000);
+    toastTimer = setTimeout(() => t.classList.remove('on'), 2200);
   }
 
   function fmtSize(n) {
@@ -216,9 +208,6 @@
     if (/^(pdf|docx?|xlsx?|pptx?|txt|md)$/.test(ext)) return 'DOC';
     if (/^(exe|msi|apk|dmg)$/.test(ext)) return 'APP';
     return 'FILE';
-  }
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
   let dark = false;
@@ -412,6 +401,19 @@
     }
   });
 
+  // ---------------------------------------------------------- 右键「发送到」
+  $('#btnSendTo').addEventListener('click', async () => {
+    if (!confirm('在「发送到」菜单里装一个「本地图库中转站」？\n\n装完：右键任意文件 → 发送到 → 本地图库中转站，就会直接登记路径。\n（只是在 SendTo 目录里放一个 .cmd，随时可以删）')) return;
+    try {
+      const r = await fetch('/api/drop/install-sendto', { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      toast('装好了，去右键试试');
+    } catch (e) {
+      toast('安装失败：' + e.message);
+    }
+  });
+
   // ---------------------------------------------------------- 文件选择器
   async function browse(p) {
     try {
@@ -460,118 +462,13 @@
   $('#pkPath').addEventListener('keydown', (e) => { if (e.key === 'Enter') browse(e.target.value.trim()); });
   $('#pkUp').addEventListener('click', () => { const p = $('#pkUp').__parent; if (p) browse(p); });
 
-  // ---------------------------------------------------------- 上传（只有这条会写盘）
-  function addRow(file) {
-    $('#queueWrap').hidden = false;
-    const row = document.createElement('div');
-    row.style.cssText = 'position:relative;display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden;';
-    const nm = document.createElement('div');
-    nm.style.cssText = 'flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-    nm.textContent = file.name;
-    const st = document.createElement('div');
-    st.style.cssText = 'flex:none;font-size:11px;color:var(--fg-mute);font-variant-numeric:tabular-nums;';
-    st.textContent = '等待…';
-    const bar = document.createElement('div');
-    bar.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--line);';
-    const fill = document.createElement('i');
-    fill.style.cssText = 'display:block;height:100%;width:0;background:var(--fg);transition:width .12s linear;';
-    bar.appendChild(fill);
-    row.append(nm, st, bar);
-    $('#queue').appendChild(row);
-
-    return {
-      set(pct, text) {
-        fill.style.width = Math.max(0, Math.min(100, pct * 100)).toFixed(1) + '%';
-        st.textContent = text;
-      },
-      finish(text) {
-        this.set(1, text);
-        setTimeout(() => { try { row.remove(); } catch (e) { } }, 2500);
-      },
-    };
-  }
-
-  function putChunk(name, blob, start, end, total, onProgress) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', '/api/drop/upload?name=' + encodeURIComponent(name));
-      xhr.setRequestHeader('Content-Range', 'bytes ' + start + '-' + (end - 1) + '/' + total);
-      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded); };
-      xhr.onload = () => {
-        let body = null;
-        try { body = JSON.parse(xhr.responseText); } catch (e) { }
-        resolve({ status: xhr.status, body: body || {} });
-      };
-      xhr.onerror = () => reject(new Error('网络中断'));
-      xhr.send(blob);
-    });
-  }
-
-  async function uploadOne(file) {
-    const row = addRow(file);
-    const t0 = performance.now();
-    let off = 0;
-    try {
-      const r = await fetch('/api/drop/upload?name=' + encodeURIComponent(file.name) + '&size=' + file.size);
-      const j = await r.json();
-      if (j && j.received > 0 && j.received < file.size) off = j.received;
-    } catch (e) { }
-
-    while (off < file.size) {
-      const end = Math.min(off + CHUNK, file.size);
-      const start = off;
-      let res;
-      try {
-        res = await putChunk(file.name, file.slice(off, end), off, end, file.size, (loaded) => {
-          const done = start + loaded;
-          const sec = Math.max(0.001, (performance.now() - t0) / 1000);
-          row.set(done / file.size, fmtSize(done) + ' / ' + fmtSize(file.size) + ' · ' + fmtSize(done / sec) + '/s');
-        });
-      } catch (e) {
-        row.finish('中断：' + e.message);
-        return false;
-      }
-      if (res.status === 409) { off = Number(res.body.expect) || 0; continue; }
-      if (res.status < 200 || res.status >= 300) { row.finish('失败：HTTP ' + res.status); return false; }
-      if (res.body.done) { row.finish('完成'); return true; }
-      off = end;
-    }
-    row.finish('完成');
-    return true;
-  }
-
-  let uploading = false;
-  const pending = [];
-  async function pump() {
-    if (uploading) return;
-    uploading = true;
-    while (pending.length) {
-      const f = pending.shift();
-      try { await uploadOne(f); } catch (e) { toast('上传出错：' + e.message); }
-    }
-    uploading = false;
-    refresh();
-  }
-  function enqueue(files) {
-    const arr = Array.from(files || []);
-    if (!arr.length) return;
-    for (const f of arr) pending.push(f);
-    pump();
-  }
-
-  const zone = $('#dropZone');
-  const input = $('#fileInput');
-  zone.addEventListener('click', () => input.click());
-  input.addEventListener('change', () => { enqueue(input.files); input.value = ''; });
-  let depth = 0;
-  const hasFiles = (dt) => Array.from((dt && dt.types) || []).indexOf('Files') >= 0;
-  window.addEventListener('dragenter', (e) => { if (!hasFiles(e.dataTransfer)) return; depth++; zone.classList.add('over'); });
-  window.addEventListener('dragover', (e) => { if (hasFiles(e.dataTransfer)) e.preventDefault(); });
-  window.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) zone.classList.remove('over'); });
+  // 拖进来不吞掉，也不上传：直接告诉用户浏览器做不到，并打开选择器
+  window.addEventListener('dragover', (e) => e.preventDefault());
   window.addEventListener('drop', (e) => {
-    if (!hasFiles(e.dataTransfer)) return;
-    e.preventDefault(); depth = 0; zone.classList.remove('over');
-    enqueue(e.dataTransfer.files);
+    e.preventDefault();
+    toast('浏览器读不到拖进来的文件路径，用「浏览文件…」或右键「发送到」');
+    $('#picker').hidden = false;
+    browse('');
   });
 
   // ---------------------------------------------------------- 启动
@@ -590,9 +487,7 @@
         try { await navigator.clipboard.writeText(url); toast('已复制：' + url); }
         catch (e) { toast(url); }
       });
-      const hint = $('#dirHint');
-      hint.innerHTML = '下载直接从原路径流式读，不占额外磁盘；只有手机上传的文件会写到 <code>.drops</code> 目录。移除 / 清空只删记录，不删你的文件。';
-      hint.title = '上传目录：' + (d.dir || '');
+      $('#dirHint').textContent = '下载直接从原路径流式读，不占额外磁盘。移除 / 清空只删记录，不删你的文件。';
     } catch (e) { }
 
     try {
