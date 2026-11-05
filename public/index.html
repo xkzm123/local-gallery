@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>图库</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111' stroke-width='1.8'><rect x='3' y='3' width='18' height='18' rx='2'/><circle cx='9' cy='9' r='1.6'/><path d='M21 15l-5-5L5 21'/></svg>">
+</head>
+<body>
+
+<header id="topbar">
+  <button id="btnMenu" class="ibtn" title="目录 (M)" aria-label="目录">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+
+  <div id="titleWrap">
+    <span id="docTitle">图库</span>
+    <span id="docMeta"></span>
+  </div>
+
+  <div class="tb-spacer"></div>
+
+  <div id="searchBox" class="searchbox">
+    <svg viewBox="0 0 24 24" class="sch-ico"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="q" type="search" placeholder="搜索文件名" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div class="tb-tools">
+    <button id="btnSearch" class="ibtn m-only" title="搜索">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    </button>
+
+    <div class="seg">
+      <button id="btnGrid" class="ibtn on" title="网格 (1)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </button>
+      <button id="btnTwo" class="ibtn" title="多列 (3)｜长按调列数与图片大小">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1"/></svg>
+      </button>
+      <button id="btnSingle" class="ibtn" title="单列 (2)">
+        <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="7" rx="1"/><rect x="4" y="14" width="16" height="7" rx="1"/></svg>
+      </button>
+    </div>
+
+    <button id="btnRot" class="ibtn m-hide" title="旋转 90° (R)">
+      <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3.2-6.9"/><path d="M21 3v6h-6"/></svg>
+    </button>
+
+    <button id="btnAuto" class="ibtn m-hide" title="自动滚动 (空格)">
+      <svg viewBox="0 0 24 24"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
+    </button>
+
+    <button id="btnSlideshow" class="ibtn m-hide" title="幻灯片">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></svg>
+    </button>
+
+    <button id="btnFullscreen" class="ibtn m-only" title="全屏">
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>
+    </button>
+
+    <button id="btnSettings" class="ibtn" title="设置">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+
+    <button id="btnTheme" class="ibtn" title="深色 / 浅色">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" stroke="none"/></svg>
+    </button>
+  </div>
+</header>
+
+<aside id="sidebar">
+  <div class="side-head">
+    <span class="side-title">目录</span>
+    <button id="btnRoot" class="txtbtn">根目录</button>
+  </div>
+  <div id="tree" class="tree"></div>
+  <div class="side-foot">
+    <button id="btnRootPick" class="txtbtn wide">
+      <svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/><path d="M15 12v5M12.5 14.5h5"/></svg>
+      <span>更改图库目录</span>
+    </button>
+    <button id="btnRecursive" class="txtbtn wide">
+      <svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/><path d="M3 7V5h5v2"/></svg>
+      <span>读取所有子文件夹</span>
+    </button>
+  </div>
+</aside>
+<div id="scrim" class="scrim"></div>
+
+<main id="main">
+  <div id="gallery" class="gallery"></div>
+  <div id="empty" class="empty" hidden></div>
+</main>
+
+<nav id="mobileBar">
+  <button id="mPrev" class="mb" title="上一屏">
+    <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+  </button>
+  <button id="mRot" class="mb">
+    <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3.2-6.9"/><path d="M21 3v6h-6"/></svg>
+    <span>旋转</span>
+  </button>
+  <button id="mAuto" class="mb">
+    <svg viewBox="0 0 24 24"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
+    <span>滚动</span>
+  </button>
+  <button id="mNext" class="mb" title="下一屏">
+    <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+  </button>
+</nav>
+
+<div id="lightbox" class="lightbox" hidden>
+  <div class="lb-top">
+    <span id="lbCount" class="mono"></span>
+    <span id="lbName" class="lb-name"></span>
+    <div class="tb-spacer"></div>
+    <button id="lbRot" class="ibtn" title="旋转 (R)"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3.2-6.9"/><path d="M21 3v6h-6"/></svg></button>
+    <button id="lbZoomOut" class="ibtn" title="缩小"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+    <button id="lbZoomIn" class="ibtn" title="放大"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+    <button id="lbPlay" class="ibtn" title="幻灯片 (空格)"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg></button>
+    <button id="lbFull" class="ibtn" title="全屏 (F)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg></button>
+    <button id="lbClose" class="ibtn" title="关闭 (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="lb-stage" id="lbStage">
+    <img id="lbImg" alt="" draggable="false">
+  </div>
+  <button id="lbPrev" class="lb-nav prev"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <button id="lbNext" class="lb-nav next"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+  <div class="lb-progress"><i id="lbBar"></i></div>
+</div>
+
+<aside id="settings" class="drawer" hidden>
+  <div class="drawer-head">
+    <span>设置</span>
+    <button id="btnCloseSettings" class="ibtn"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+
+  <div class="drawer-body">
+    <div class="grp">
+      <div class="grp-t">图库目录</div>
+      <div id="setRoot" class="path-box">（未设置）</div>
+      <button id="btnChangeRoot" class="btn">更改图库目录</button>
+      <div class="hint">选完立即生效并写入 config.json。手机端也能改电脑上的路径。</div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">图片填充（网格模式）</div>
+      <div class="seg-row" id="fitRow">
+        <button class="segb" data-fit="auto">原图比例</button>
+        <button class="segb" data-fit="cover">裁剪填满</button>
+        <button class="segb" data-fit="contain">完整显示</button>
+        <button class="segb" data-fit="fill">拉伸铺满</button>
+      </div>
+      <div class="hint">单列模式始终按原图比例，不裁剪、不拉伸。四个选项只影响网格。</div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">图片序号</div>
+      <div class="seg-row" id="indexRow">
+        <button class="segb" data-index="0">不显示</button>
+        <button class="segb" data-index="1">显示序号</button>
+      </div>
+      <div class="hint">开启后每张图左上角显示它在当前列表里的位置。</div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">默认视图</div>
+      <div class="seg-row" id="viewRow">
+        <button class="segb" data-view="grid">网格</button>
+        <button class="segb" data-view="two">双列</button>
+        <button class="segb" data-view="single">单列</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">列数 <b id="vCols" class="mono"></b></div>
+      <input id="setCols" class="rng" type="range" min="1" max="8" step="1">
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">图片间距 <b id="vGap" class="mono"></b></div>
+      <input id="setGap" class="rng" type="range" min="0" max="24" step="1">
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">双列图片大小 <b id="vTwoH" class="mono"></b></div>
+      <input id="setTwoH" class="rng" type="range" min="60" max="150" step="5">
+      <div class="hint">100% = 正好填满一列；小于 100% 图片变小、四周留白；大于 100% 放大看细节（会裁掉边缘）。也支持长按顶栏 ▥ 直接调。</div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">自动滚动方式</div>
+      <div class="seg-row" id="autoModeRow">
+        <button class="segb" data-mode="scroll">连续滚动</button>
+        <button class="segb" data-mode="step">按间隔跳</button>
+      </div>
+      <div class="hint">连续滚动 = 一直匀速下滑；按间隔跳 = 每隔 N 秒往下翻一屏。</div>
+      <button id="btnAutoInDrawer" class="btn" style="margin-top:8px;">开始自动滚动</button>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">滚动速度 <b id="vSpeed" class="mono"></b></div>
+      <input id="setSpeed" class="rng" type="range" min="10" max="400" step="5">
+      <div class="hint">仅「连续滚动」时生效。</div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">滚动间隔 <b id="vStep" class="mono"></b></div>
+      <input id="setStep" class="rng" type="range" min="1" max="60" step="1">
+      <div class="hint">仅「按间隔跳」时生效。</div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">幻灯片间隔 <b id="vSlide" class="mono"></b></div>
+      <input id="setSlide" class="rng" type="range" min="1" max="30" step="1">
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">播完一整册后</div>
+      <div class="seg-row" id="playModeRow">
+        <button class="segb" data-play="loop">循环本册</button>
+        <button class="segb" data-play="next">跳下一册</button>
+      </div>
+      <div class="hint">只影响幻灯片播放；手动翻页始终在本册内循环。</div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">主题</div>
+      <div class="seg-row" id="themeRow">
+        <button class="segb" data-theme="light">浅色</button>
+        <button class="segb" data-theme="dark">深色</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="grp-t">配置文件</div>
+      <div id="setCfgPath" class="path-box small"></div>
+    </div>
+  </div>
+
+  <div class="drawer-foot">
+    <div id="saveState" class="save-state"></div>
+    <button id="btnSaveSettings" class="btn primary">立即保存</button>
+  </div>
+</aside>
+<div id="drawerScrim" class="scrim"></div>
+
+<div id="picker" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>选择图库目录</span>
+      <button id="pickerCancel" class="ibtn"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+
+    <div class="picker-path">
+      <input id="pickerPath" type="text" placeholder="可直接粘贴完整路径，例如 D:\图片" spellcheck="false">
+      <button id="pickerGo" class="btn small">前往</button>
+    </div>
+
+    <div id="pickerQuick" class="picker-quick"></div>
+    <div id="pickerList" class="picker-list"></div>
+
+    <div class="modal-foot">
+      <button id="pickerUp" class="btn ghost">上一级</button>
+      <span id="pickerSel" class="pick-sel"></span>
+      <div class="tb-spacer"></div>
+      <button id="pickerUse" class="btn primary">使用此文件夹</button>
+    </div>
+  </div>
+</div>
+
+<div id="speedPop" class="pop" hidden>
+  <div class="pop-row">
+    <span class="pop-l">速度</span>
+    <input id="popSpeed" class="rng" type="range" min="10" max="400" step="5">
+    <b id="popSpeedV" class="mono"></b>
+  </div>
+  <div class="pop-row">
+    <span class="pop-l">间隔</span>
+    <input id="popStep" class="rng" type="range" min="1" max="60" step="1">
+    <b id="popStepV" class="mono"></b>
+  </div>
+  <div class="pop-row">
+    <span class="pop-l">幻灯</span>
+    <input id="popSlide" class="rng" type="range" min="1" max="30" step="1">
+    <b id="popSlideV" class="mono"></b>
+  </div>
+  <div class="pop-row" id="popColsRow">
+    <span class="pop-l">列数</span>
+    <div class="pop-seg" id="popColsSeg">
+      <button class="pseg" data-c="2">2</button>
+      <button class="pseg" data-c="3">3</button>
+      <button class="pseg" data-c="4">4</button>
+      <button class="pseg" data-c="5">5</button>
+      <button class="pseg" data-c="6">6</button>
+    </div>
+  </div>
+  <div class="pop-row" id="popTwoRow">
+    <span class="pop-l">双列</span>
+    <input id="popTwoH" class="rng" type="range" min="60" max="150" step="5">
+    <b id="popTwoHV" class="mono"></b>
+  </div>
+  <div class="pop-mode" id="popMode"></div>
+  <div class="pop-hint">长按滚动键随时调；点别处收起</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

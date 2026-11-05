@@ -1,0 +1,14 @@
+# 本地配置：含你自己的图库绝对路径，绝不入库
+config.json
+config.json.tmp
+
+# 依赖 / 构建产物（本项目零依赖，留着以防万一）
+node_modules/
+dist/
+
+# 日志与临时文件
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+desktop.ini
