@@ -5,6 +5,10 @@ config.json.tmp
 # 中转站收到的文件
 .drops/
 
+# 访客门户：文案与访问日志
+guest.json
+.guest-log.json
+
 # 依赖 / 构建产物（本项目零依赖，留着以防万一）
 node_modules/
 dist/

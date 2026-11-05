@@ -129,6 +129,38 @@
 - **实时刷新**：SSE 推送，一台设备传完，另一台列表自动变
 - 下载复用图库那套 Range / 206，几 GB 的蓝光原盘也不会把内存撑爆
 
+### 访客门户（连上 WiFi 自动弹说明页）
+
+<img src="docs/img/07-guest.jpg" alt="访客门户" width="100%">
+
+`node server.js --portal` 会在 80 端口再起一个服务：**任何请求都 302 到 `/guest`**。
+再配合路由器把 DNS 指到这台机器，别人连上 WiFi 后系统就会自己弹出「登录网络」——
+
+| 系统 | 探测域名 |
+|---|---|
+| iOS / macOS | `captive.apple.com` |
+| Android | `connectivitycheck.gstatic.com` |
+| Windows | `www.msftconnecttest.com` |
+| Firefox | `detectportal.firefox.com` |
+
+`--dns` 会额外起一个 53 端口的 DNS：**只把这几个探测域名指回本机，其余全部透明转发**给上游（默认 `223.5.5.5`）。所以客人弹完提示后照常上网，不会变成酒店那种「不点确认就上不了网」。
+
+一次性配置：
+
+1. 路由器后台 → 局域网 / DHCP 设置 → **主 DNS 填这台电脑的 IP**，**备用 DNS 填 `223.5.5.5`**（这台电脑关机时兜底）
+2. 在路由器里给这台电脑做 **IP 绑定**，否则 IP 一变 DNS 就指空了
+3. `node server.js --portal --dns` 启动
+
+> 中兴 / 华为这类运营商光猫的 DHCP 页面有时不给改 DNS。改不了就退回「把地址告诉客人」，或者换个能刷 OpenWrt 的路由器——`openNDS` / `nodogsplash` 是现成的。
+
+**谁在访问**：`/guest/devices`
+
+<img src="docs/img/08-devices.jpg" alt="设备看板" width="100%">
+
+- 在线设备 = 并发 ping 扫一遍 `/24` 后读系统 ARP 表，只发 ICMP，3 秒出结果
+- 手机开了「私有 WiFi 地址」的会标「随机 MAC」——认 IP 比认 MAC 靠谱
+- 访问记录来自 `/guest` 的每一次真实请求（同 IP 30 秒内只记一次）
+
 ### 手机 / 平板
 
 - `≤900px` 顶栏收成 ☰ + 标题 + 搜索 + 视图 + 全屏 + 设置；`≤760px` 出现底部操作栏（上一屏 / 旋转 / 滚动 / 下一屏）
@@ -195,6 +227,9 @@ node server.js                       # 默认 8710
 node server.js --port=8711           # 换端口
 node server.js --root="D:\图片"      # 直接指定图库目录
 node server.js --drop="D:\中转站"    # 换中转站存放目录
+node server.js --portal              # 80 端口起门户跳转
+node server.js --dns                 # 53 端口劫持联网探测域名
+node server.js --dns-upstream=8.8.8.8  # 换 DNS 上游
 node server.js --no-open             # 不自动开浏览器
 node server.js --no-kill             # 端口被占时不自动清理
 ```
@@ -220,6 +255,10 @@ node server.js --no-kill             # 端口被占时不自动清理
 | `GET /api/drop/events` | SSE，列表变化实时推送 |
 | `GET /d/:name` | 下载中转站文件（`Content-Disposition: attachment`） |
 | `DELETE /api/drop/file?name=X` · `/api/drop/all` | 删除单个 / 清空 |
+| `GET /guest` | 访客门户（会记一条访问日志） |
+| `GET /guest.json` | 门户文案（改 `guest.json` 生效） |
+| `GET /guest/devices` | 设备看板页面 |
+| `GET /api/guest/devices` | 在线设备 + 访问记录；`?scan=1` 强制重扫 |
 
 **安全边界**：`/api/list` 和 `/img` 只能访问 `root` 以内的路径，`..`、绝对路径、盘符一律 403；服务端不提供写入 / 删除图库的接口。中转站是有意设计成无鉴权的——它只该在你自己信任的局域网里跑。
 
@@ -245,13 +284,18 @@ gallery/
 ├── start.bat           双击启动（纯 ASCII，不会有乱码）
 ├── stop.bat            释放端口
 ├── config.example.json 配置模板
+├── guest.example.json  门户文案模板
 ├── config.json         本地配置，首次保存时生成（已 gitignore）
+├── guest.json          本地门户文案（已 gitignore）
+├── .guest-log.json     访问记录（已 gitignore）
 ├── .drops/             中转站收到的文件（已 gitignore）
 ├── public/
 │   ├── index.html      图库页面
 │   ├── app.js          前端逻辑
 │   ├── style.css
-│   └── drop.html       中转站页面
+│   ├── drop.html       中转站页面
+│   ├── guest.html      访客门户
+│   └── devices.html    设备看板
 ├── docs/
 │   ├── img/            README 截图
 │   └── 中转站-调研与集成方案.md
@@ -290,6 +334,13 @@ v1.2 起服务端已设 `requestTimeout = 0`，慢网络也不会被 5 分钟掐
 ---
 
 ## 更新日志
+
+### v1.3 · 2026-11-05
+
+- 新增**访客门户**：`--portal` 在 80 端口把任何请求 302 到 `/guest`；`--dns` 劫持 4 个联网探测域名（其余透明转发），别人连上 WiFi 自动弹出说明页
+- 新增**设备看板** `/guest/devices`：并发 ping 扫 `/24` + 读 ARP 表列出在线设备，并记录每次打开门户的 IP / 浏览器 / 时间
+- 门户跳转改用 `req.socket.localAddress`，多网卡（热点 / VPN）时不再把客人送到连不上的地址
+- `lanAddresses()` 把 `192.168.137.1`（Windows 移动热点固定地址）排到最后
 
 ### v1.2 · 2026-11-05
 

@@ -453,7 +453,10 @@
       const d = await r.json();
       render(d);
       const ip = (d.lan && d.lan[0] && d.lan[0].ip) || location.hostname;
-      const url = 'http://' + ip + ':' + d.port + '/drop';
+      // 自己就是从某个内网 IP 打开的，那个 IP 一定是对的；只有用 localhost 打开时才靠猜
+      const host = location.hostname;
+      const shown = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) && !/^127\./.test(host) ? host : ip;
+      const url = 'http://' + shown + ':' + d.port + '/drop';
       const chip = $('#lanChip');
       chip.textContent = url;
       chip.title = '点一下复制，发给同一 WiFi 下的手机';

@@ -24,7 +24,8 @@ const fsp = fs.promises;
 const path = require('path');
 const os = require('os');
 const zlib = require('zlib');
-const { execSync } = require('child_process');
+const dgram = require('dgram');
+const { execSync, execFile } = require('child_process');
 
 // ---------------------------------------------------------------- 参数
 const argv = process.argv.slice(2);
@@ -635,10 +636,12 @@ function lanAddresses() {
         }
     }
     // 私网地址排前面：VPN / 虚拟网卡（198.18.x、100.64.x）不该抢到第一行，
-    // 手机要输的永远是 192.168 / 10 / 172.16-31 那一个
-    const rank = (ip) => (/^192\.168\./.test(ip) ? 0
-        : /^10\./.test(ip) ? 1
-            : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3);
+    // 手机要输的永远是 192.168 / 10 / 172.16-31 那一个。
+    // 192.168.137.1 是 Windows 移动热点的固定地址，优先级压到最后。
+    const rank = (ip) => (ip === '192.168.137.1' ? 9
+        : /^192\.168\./.test(ip) ? 0
+            : /^10\./.test(ip) ? 1
+                : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3);
     out.sort((a, b) => rank(a.ip) - rank(b.ip));
     return out;
 }
@@ -663,6 +666,261 @@ function readBody(req, limit) {
         });
         req.on('error', reject);
     });
+}
+
+/**
+ * DNS 劫持：只劫持「联网探测」那几个域名，其余全部转发给上游。
+ *
+ * 为什么只劫持这几个：
+ *   把 53 端口整个劫持成「什么都回本机」= 酒店式强制门户，客人不点确认就上不了网；
+ *   我们只是想让系统弹一次「登录网络」的提示，弹完人家该怎么上网怎么上网。
+ *   所以非探测域名一律透明转发，PC 关掉时配合路由器备用 DNS 也不会断网。
+ */
+const PROBE_DOMAINS = [
+    'connectivitycheck.gstatic.com',   // Android
+    'connectivitycheck.android.com',
+    'www.google.com',                  // 部分 Android 老版本
+    'captive.apple.com',               // iOS / macOS
+    'www.apple.com',
+    'www.msftconnecttest.com',         // Windows
+    'www.msftncsi.com',
+    'detectportal.firefox.com',        // Firefox
+    'networkcheck.kde.org',            // KDE
+];
+
+const DNS_UPSTREAM = (() => {
+    const a = argv.find((x) => x.startsWith('--dns-upstream='));
+    return a ? a.split('=')[1] : '223.5.5.5';
+})();
+
+function dnsQName(msg) {
+    let p = 12;
+    const parts = [];
+    while (p < msg.length && msg[p] !== 0) {
+        const len = msg[p];
+        if (len > 63 || p + 1 + len > msg.length) return null;
+        parts.push(msg.toString('ascii', p + 1, p + 1 + len));
+        p += 1 + len;
+    }
+    // 问题段 = 域名 + 0x00 + QTYPE(2) + QCLASS(2)，整段都要原样抄回去
+    if (p + 5 > msg.length) return null;
+    return {
+        name: parts.join('.').toLowerCase(),
+        qtype: msg.readUInt16BE(p + 1),
+        end: p + 5,
+    };
+}
+
+function dnsA(msg, q, ip) {
+    const head = Buffer.from(msg.subarray(0, q.end));
+    head[2] = 0x81;                       // QR=1 RD=1
+    head[3] = 0x80;                       // RA=1 NOERROR
+    head[6] = 0; head[7] = 1;             // ANCOUNT = 1
+    head[8] = 0; head[9] = 0;             // NSCOUNT
+    head[10] = 0; head[11] = 0;           // ARCOUNT
+    const ans = Buffer.alloc(16);
+    ans.writeUInt16BE(0xc00c, 0);         // 指向问题里的域名
+    ans.writeUInt16BE(1, 2);              // TYPE A
+    ans.writeUInt16BE(1, 4);              // CLASS IN
+    ans.writeUInt32BE(0, 6);              // TTL 0，不缓存
+    ans.writeUInt16BE(4, 10);             // RDLENGTH
+    const o = ip.split('.').map(Number);
+    ans[12] = o[0]; ans[13] = o[1]; ans[14] = o[2]; ans[15] = o[3];
+    return Buffer.concat([head, ans]);
+}
+
+/** qtype 不是 A 的查询：回一个「没有记录」，让客户端自己回退去查 A */
+function dnsEmpty(msg, q) {
+    const head = Buffer.from(msg.subarray(0, q.end));
+    head[2] = 0x81;
+    head[3] = 0x80;
+    head[6] = 0; head[7] = 0;
+    head[8] = 0; head[9] = 0;
+    head[10] = 0; head[11] = 0;
+    return head;
+}
+
+function startDns() {
+    const lan = lanAddresses();
+    const myIp = (lan[0] || {}).ip;
+    if (!myIp) {
+        console.error('  [!] DNS 劫持：找不到局域网地址，跳过');
+        return;
+    }
+
+    const sock = dgram.createSocket('udp4');
+    sock.on('error', (e) => {
+        console.error('  [!] DNS 53 端口起不来：' + e.message
+            + '（可能被其它 DNS 服务占用，或需要管理员权限）');
+    });
+
+    sock.on('message', (msg, rinfo) => {
+        if (msg.length < 13) return;
+        const q = dnsQName(msg);
+        if (!q) return;
+        const hit = PROBE_DOMAINS.some((d) => q.name === d || q.name.endsWith('.' + d));
+
+        if (hit) {
+            try {
+                sock.send(q.qtype === 1 ? dnsA(msg, q, myIp) : dnsEmpty(msg, q), rinfo.port, rinfo.address);
+            } catch (e) { }
+            return;
+        }
+
+        // 其余透明转发
+        const up = dgram.createSocket('udp4');
+        let done = false;
+        const finish = (buf) => {
+            if (done) return;
+            done = true;
+            try { if (buf) sock.send(buf, rinfo.port, rinfo.address); } catch (e) { }
+            try { up.close(); } catch (e) { }
+        };
+        up.on('message', (r) => finish(r));
+        up.on('error', () => finish(null));
+        setTimeout(() => finish(null), 3000);
+        try {
+            up.send(msg, 53, DNS_UPSTREAM);
+        } catch (e) {
+            finish(null);
+        }
+    });
+
+    sock.bind(53, '0.0.0.0', () => {
+        console.log('  |  DNS     : 53 已劫持探测域名 -> ' + myIp + '，其余转发 ' + DNS_UPSTREAM);
+    });
+}
+
+// ---------------------------------------------------------------- 访客门户
+// --portal        在 80 端口再起一个极简服务：任何请求都 302 到 /guest
+// --portal=8080   换端口（调试用）
+const PORTAL_PORT = (() => {
+    const a = argv.find((x) => x === '--portal' || x.startsWith('--portal='));
+    if (!a) return 0;
+    if (a === '--portal') return 80;
+    return Number(a.split('=')[1]) || 80;
+})();
+
+const GUEST_FILE = path.join(APP_DIR, 'guest.json');
+const GUEST_LOG = path.join(APP_DIR, '.guest-log.json');
+const GUEST_LOG_MAX = 500;
+
+let guestLog = [];
+let guestSaveTimer = 0;
+
+function loadGuestLog() {
+    try {
+        const j = JSON.parse(fs.readFileSync(GUEST_LOG, 'utf8'));
+        guestLog = Array.isArray(j) ? j.slice(0, GUEST_LOG_MAX) : [];
+    } catch (e) {
+        guestLog = [];
+    }
+}
+
+function saveGuestLog() {
+    clearTimeout(guestSaveTimer);
+    guestSaveTimer = setTimeout(() => {
+        try { fs.writeFileSync(GUEST_LOG, JSON.stringify(guestLog)); } catch (e) { }
+    }, 400);
+}
+
+/** 门户文案：改 guest.json 就行，不用动代码 */
+function guestInfo() {
+    let g = {};
+    try { g = JSON.parse(stripJsonComments(fs.readFileSync(GUEST_FILE, 'utf8'))); } catch (e) { }
+    return {
+        title: g.title || '欢迎连上这个 WiFi',
+        subtitle: g.subtitle || '这台电脑上跑着几个局域网服务，打开就能用。',
+        notice: g.notice || '',
+        links: Array.isArray(g.links) && g.links.length
+            ? g.links.filter((x) => x && x.href && x.name)
+            : [
+                { name: '本地图库', href: '/', desc: '看图、翻相册' },
+                { name: '中转站', href: '/drop', desc: '传文件 / 下文件' },
+            ],
+    };
+}
+
+function clientIp(req) {
+    const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    let ip = fwd || (req.socket && req.socket.remoteAddress) || '';
+    if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+    return ip;
+}
+
+function logGuestVisit(req) {
+    const ip = clientIp(req);
+    if (!ip) return;
+    const last = guestLog[0];
+    // 同一台设备 30 秒内只记一次，避免刷新刷屏
+    if (last && last.ip === ip && Date.now() - last.t < 30000) return;
+    guestLog.unshift({ t: Date.now(), ip, ua: String(req.headers['user-agent'] || '').slice(0, 200) });
+    if (guestLog.length > GUEST_LOG_MAX) guestLog.length = GUEST_LOG_MAX;
+    saveGuestLog();
+}
+
+/** 读系统 ARP 表：IP -> MAC（Windows 用 -，*nix 用 :，统一成 -） */
+function arpTable() {
+    const out = new Map();
+    try {
+        const txt = execSync('arp -a', { encoding: 'utf8', windowsHide: true, maxBuffer: 4 << 20 });
+        const re = /(\d{1,3}(?:\.\d{1,3}){3})\s+([0-9a-f]{2}(?:[-:][0-9a-f]{2}){5})/gi;
+        let m;
+        while ((m = re.exec(txt))) out.set(m[1], m[2].toLowerCase().replace(/:/g, '-'));
+    } catch (e) { }
+    return out;
+}
+
+/** 随机 MAC（手机隐私地址）的本地管理位 */
+function isRandomMac(mac) {
+    const b = parseInt(String(mac).slice(0, 2), 16);
+    return (b & 0x02) === 0x02;
+}
+
+/**
+ * 扫一遍当前 /24：先并发 ping 唤醒 ARP，再读 ARP 表。
+ * 只发 ICMP，不改任何东西；结果缓存 15 秒。
+ */
+async function scanLan(force) {
+    const now = Date.now();
+    if (!force && scanLan.at && now - scanLan.at < 15000) return scanLan.data;
+
+    const lan = lanAddresses();
+    const me = lan[0] ? lan[0].ip : '';
+    const ips = [];
+    if (me) {
+        const base = me.split('.').slice(0, 3).join('.');
+        for (let i = 1; i <= 254; i++) ips.push(base + '.' + i);
+    }
+
+    let idx = 0;
+    const workers = new Array(40).fill(0).map(async () => {
+        while (idx < ips.length) {
+            const ip = ips[idx++];
+            await new Promise((res) => {
+                execFile('ping', ['-n', '1', '-w', '250', ip], { windowsHide: true }, () => res());
+            });
+        }
+    });
+    await Promise.all(workers);
+
+    const table = arpTable();
+    const devices = [];
+    for (const [ip, mac] of table) {
+        if (ip.endsWith('.255') || ip.startsWith('224.') || ip.startsWith('239.')) continue;
+        devices.push({
+            ip,
+            mac,
+            self: ip === me,
+            randomMac: isRandomMac(mac),
+            lastSeen: (guestLog.find((v) => v.ip === ip) || {}).t || 0,
+        });
+    }
+    devices.sort((a, b) => Number(a.ip.split('.')[3]) - Number(b.ip.split('.')[3]));
+
+    scanLan.at = Date.now();
+    scanLan.data = devices;
+    return devices;
 }
 
 // ---------------------------------------------------------------- 中转站
@@ -844,6 +1102,35 @@ const server = http.createServer(async (req, res) => {
                 saved: saved,
                 onDiskRoot: onDisk ? onDisk.root : null,
                 configPath: CONFIG_PATH,
+            });
+            return;
+        }
+
+        // ------------------------------------------------ 访客门户
+        if (p === '/guest' || p === '/portal') {
+            logGuestVisit(req);
+            servePublic(req, res, '/guest.html');
+            return;
+        }
+
+        if (p === '/guest.json') {
+            sendJSON(req, res, 200, guestInfo());
+            return;
+        }
+
+        if (p === '/guest/devices') {
+            servePublic(req, res, '/devices.html');
+            return;
+        }
+
+        if (p === '/api/guest/devices') {
+            const devices = await scanLan(u.searchParams.get('scan') === '1');
+            sendJSON(req, res, 200, {
+                devices,
+                visits: guestLog.slice(0, 200),
+                info: guestInfo(),
+                me: (lanAddresses()[0] || {}).ip || '',
+                you: clientIp(req),
             });
             return;
         }
@@ -1085,4 +1372,35 @@ function startListening(attempt) {
 readConfig();
 // 中转站要传大文件：Node 18+ 默认 requestTimeout = 300000ms，慢 WiFi 传几 GB 必被掐断
 server.requestTimeout = 0;
+loadGuestLog();
 startListening(0);
+
+/**
+ * 门户模式：80 端口上任何请求都 302 到 /guest。
+ * 这是「连上 WiFi 自动弹说明页」的最后一步 —— 前提是路由器把 80 或 DNS 指到这台机器。
+ */
+function startPortal() {
+    if (!PORTAL_PORT) return;
+    const ps = http.createServer((req, res) => {
+        // 客户端是从哪个 IP 打到我们的，就跳回哪个 IP —— 不能猜，
+        // 多网卡（热点 / VPN）时猜错就把人送到一个他连不上的地址
+        let ip = (req.socket && req.socket.localAddress) || '';
+        if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+        if (!ip || ip === '::1' || ip.startsWith('127.')) {
+            ip = (lanAddresses()[0] || {}).ip || '127.0.0.1';
+        }
+        const target = 'http://' + ip + ':' + PORT + '/guest';
+        logGuestVisit(req);
+        res.writeHead(302, { Location: target, 'Cache-Control': 'no-store', Connection: 'close' });
+        res.end();
+    });
+    ps.on('error', (e) => {
+        console.error('  [!] 门户端口 ' + PORTAL_PORT + ' 起不来：' + e.message);
+    });
+    ps.listen(PORTAL_PORT, '0.0.0.0', () => {
+        console.log('  |  Portal  : http://<LAN-IP>:' + PORTAL_PORT + '  ->  /guest');
+    });
+}
+
+startPortal();
+if (argv.includes('--dns')) startDns();

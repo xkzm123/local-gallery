@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>欢迎</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  html, body { height: 100%; }
+  body {
+    padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, var(--soft), transparent 70%),
+      var(--bg);
+  }
+  .wrap { width: min(560px, calc(100vw - 40px)); padding: 28px 0 40px; }
+  .hello { font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--fg-mute); }
+  h1 { font-size: 30px; line-height: 1.25; margin: 10px 0 8px; letter-spacing: -.02em; }
+  .sub { font-size: 13.5px; color: var(--fg-dim); line-height: 1.8; }
+  .notice {
+    margin-top: 18px; padding: 12px 14px;
+    border-left: 2px solid var(--fg); background: var(--soft);
+    font-size: 12.5px; line-height: 1.8; color: var(--fg-dim); white-space: pre-wrap;
+  }
+  .links { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
+  .lk {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel); text-decoration: none; color: var(--fg);
+    transition: border-color .15s, transform .15s, background .15s;
+  }
+  .lk:hover { border-color: var(--fg-mute); transform: translateY(-1px); background: var(--soft); }
+  .lk .n { font-size: 14px; font-weight: 600; }
+  .lk .d { font-size: 11.5px; color: var(--fg-mute); margin-top: 2px; }
+  .lk .ar { margin-left: auto; color: var(--fg-mute); font-size: 16px; }
+  .foot { margin-top: 26px; display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--fg-mute); }
+  .foot a { color: var(--fg-dim); text-decoration: none; border-bottom: 1px solid var(--line-strong); }
+  .foot a:hover { color: var(--fg); }
+  .me { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  @media (max-width: 480px) {
+    h1 { font-size: 24px; }
+    .wrap { padding-top: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hello">局域网 · 欢迎</div>
+  <h1 id="title">欢迎连上这个 WiFi</h1>
+  <div class="sub" id="sub">正在读取说明…</div>
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="links" id="links"></div>
+
+  <div class="foot">
+    <span>你的地址：<span class="me" id="myip">—</span></span>
+    <span style="flex:1"></span>
+    <a href="/guest/devices">谁在访问</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  fetch('/guest.json').then(function (r) { return r.json(); }).then(function (g) {
+    document.title = g.title || '欢迎';
+    document.getElementById('title').textContent = g.title || '欢迎连上这个 WiFi';
+    document.getElementById('sub').textContent = g.subtitle || '';
+    if (g.notice) {
+      var n = document.getElementById('notice');
+      n.textContent = g.notice;
+      n.hidden = false;
+    }
+    var box = document.getElementById('links');
+    box.innerHTML = '';
+    (g.links || []).forEach(function (lk) {
+      var a = document.createElement('a');
+      a.className = 'lk';
+      a.href = lk.href;
+      var c = document.createElement('div');
+      var n1 = document.createElement('div'); n1.className = 'n'; n1.textContent = lk.name;
+      c.appendChild(n1);
+      if (lk.desc) { var d = document.createElement('div'); d.className = 'd'; d.textContent = lk.desc; c.appendChild(d); }
+      var ar = document.createElement('span'); ar.className = 'ar'; ar.textContent = '→';
+      a.appendChild(c); a.appendChild(ar);
+      box.appendChild(a);
+    });
+  }).catch(function () {
+    document.getElementById('sub').textContent = '读不到说明文件，服务可能没在跑。';
+  });
+
+  // 只用来显示「你是谁」，不参与任何判断
+  fetch('/api/guest/devices').then(function (r) { return r.json(); }).then(function (d) {
+    document.getElementById('myip').textContent = d.you || location.hostname;
+  }).catch(function () { });
+})();
+</script>
+</body>
+</html>

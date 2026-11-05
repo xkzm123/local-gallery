@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>谁在访问 · 局域网</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  body { padding-bottom: 40px; }
+  #main2 { margin: 0 auto; max-width: 980px; padding: 16px 16px 60px; }
+  .head { display: flex; align-items: center; gap: 10px; margin: 8px 0 16px; }
+  .head h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
+  .head .meta { font-size: 11.5px; color: var(--fg-mute); font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .head .btn { width: auto; margin-left: auto; }
+  .sec { margin-top: 22px; }
+  .sec-t { font-size: 12px; font-weight: 600; color: var(--fg-dim); margin-bottom: 8px; }
+  .sec-t b { font-weight: 400; color: var(--fg-mute); margin-left: 6px; }
+  .tbl { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row.head-row { background: var(--soft); font-size: 11px; color: var(--fg-mute); }
+  .c1 { width: 130px; flex: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  .c2 { width: 150px; flex: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--fg-dim); }
+  .c3 { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c4 { flex: none; font-size: 11px; color: var(--fg-mute); font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; margin-left: 6px;
+         background: var(--soft); color: var(--fg-dim); border: 1px solid var(--line); }
+  .tag.me { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .empty-row { padding: 26px 14px; text-align: center; color: var(--fg-mute); font-size: 12px; }
+  .note { margin-top: 14px; font-size: 11px; color: var(--fg-mute); line-height: 1.9; }
+  .note code { background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  @media (max-width: 640px) {
+    .c1 { width: 108px; } .c2 { width: 118px; } .c4 { display: none; }
+  }
+</style>
+</head>
+<body>
+<header id="topbar">
+  <div id="titleWrap"><span id="docTitle">谁在访问</span></div>
+  <div class="tb-spacer"></div>
+  <a class="ibtn" href="/guest" title="回到欢迎页">
+    <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+  </a>
+  <button id="btnTheme" class="ibtn" title="深色 / 浅色">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" stroke="none"/></svg>
+  </button>
+</header>
+
+<main id="main2">
+  <div class="head">
+    <h1>局域网设备</h1>
+    <span class="meta" id="me"></span>
+    <button id="btnScan" class="btn small">重新扫描</button>
+  </div>
+
+  <div class="sec">
+    <div class="sec-t">在线设备 <b id="devCount"></b></div>
+    <div class="tbl" id="devTbl"><div class="empty-row">扫描中…</div></div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-t">打开过欢迎页的设备 <b id="visCount"></b></div>
+    <div class="tbl" id="visTbl"><div class="empty-row">还没有人打开过 /guest</div></div>
+  </div>
+
+  <div class="note">
+    在线设备来自「并发 ping 扫一遍 <code>/24</code> 后读系统 ARP 表」，只发 ICMP，不改任何东西；同一台设备 15 秒内不重复扫。<br>
+    带「随机 MAC」标记的是手机开了「私有 WiFi 地址」，所以同一个人的 MAC 会变——认 IP 比认 MAC 靠谱。<br>
+    想让别人一连上 WiFi 就自动跳到 <code>/guest</code>：<code>node server.js --portal</code> 会在 80 端口起跳转服务，还需要在路由器里把 80 或 DNS 指到这台机器。
+  </div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  let dark = false;
+  try { dark = localStorage.getItem('gallery-theme') === 'dark'; } catch (e) { }
+  function applyTheme(d) {
+    document.documentElement.dataset.theme = d ? 'dark' : 'light';
+    const m = document.querySelector('meta[name=theme-color]');
+    if (m) m.setAttribute('content', d ? '#0d0e10' : '#ffffff');
+  }
+  applyTheme(dark);
+  $('#btnTheme').addEventListener('click', () => {
+    dark = !dark; applyTheme(dark);
+    try { localStorage.setItem('gallery-theme', dark ? 'dark' : 'light'); } catch (e) { }
+  });
+
+  function fmtTime(t) {
+    if (!t) return '—';
+    const d = new Date(t);
+    const p = (n) => String(n).padStart(2, '0');
+    return p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function ago(t) {
+    if (!t) return '';
+    const s = Math.floor((Date.now() - t) / 1000);
+    if (s < 60) return '刚刚';
+    if (s < 3600) return Math.floor(s / 60) + ' 分钟前';
+    if (s < 86400) return Math.floor(s / 3600) + ' 小时前';
+    return Math.floor(s / 86400) + ' 天前';
+  }
+  function shortUa(ua) {
+    const s = String(ua || '');
+    if (/iPhone/.test(s)) return 'iPhone';
+    if (/iPad/.test(s)) return 'iPad';
+    if (/Android/.test(s)) return 'Android' + (/Mobile/.test(s) ? ' 手机' : ' 平板');
+    if (/Windows/.test(s)) return 'Windows' + (/Edg\//.test(s) ? ' · Edge' : /Chrome\//.test(s) ? ' · Chrome' : '');
+    if (/Macintosh/.test(s)) return 'Mac' + (/Safari/.test(s) && !/Chrome/.test(s) ? ' · Safari' : '');
+    if (/Linux/.test(s)) return 'Linux';
+    return s.slice(0, 40) || '未知';
+  }
+
+  let timer = 0;
+  async function load(force) {
+    try {
+      const r = await fetch('/api/guest/devices' + (force ? '?scan=1' : ''));
+      const d = await r.json();
+      $('#me').textContent = d.me ? '本机 ' + d.me : '';
+
+      const dt = $('#devTbl');
+      dt.innerHTML = '';
+      $('#devCount').textContent = d.devices.length + ' 台';
+      if (!d.devices.length) {
+        dt.innerHTML = '<div class="empty-row">没扫到设备（可能是网络隔离 / AP 隔离）</div>';
+      } else {
+        const h = document.createElement('div');
+        h.className = 'row head-row';
+        h.innerHTML = '<span class="c1">IP</span><span class="c2">MAC</span><span class="c3">说明</span><span class="c4">最近</span>';
+        dt.appendChild(h);
+        for (const dev of d.devices) {
+          const row = document.createElement('div');
+          row.className = 'row';
+          const c1 = document.createElement('span'); c1.className = 'c1'; c1.textContent = dev.ip;
+          const c2 = document.createElement('span'); c2.className = 'c2'; c2.textContent = dev.mac;
+          const c3 = document.createElement('span'); c3.className = 'c3';
+          c3.textContent = dev.self ? '这台电脑' : '';
+          if (dev.self) { const t = document.createElement('span'); t.className = 'tag me'; t.textContent = '本机'; c3.appendChild(t); }
+          if (dev.randomMac) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = '随机 MAC'; c3.appendChild(t); }
+          if (dev.lastSeen) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = '访问过'; c3.appendChild(t); }
+          const c4 = document.createElement('span'); c4.className = 'c4'; c4.textContent = dev.lastSeen ? ago(dev.lastSeen) : '';
+          row.append(c1, c2, c3, c4);
+          dt.appendChild(row);
+        }
+      }
+
+      const vt = $('#visTbl');
+      vt.innerHTML = '';
+      $('#visCount').textContent = d.visits.length + ' 次';
+      if (!d.visits.length) {
+        vt.innerHTML = '<div class="empty-row">还没有人打开过 /guest</div>';
+      } else {
+        for (const v of d.visits.slice(0, 60)) {
+          const row = document.createElement('div');
+          row.className = 'row';
+          const c1 = document.createElement('span'); c1.className = 'c1'; c1.textContent = v.ip;
+          const c2 = document.createElement('span'); c2.className = 'c2'; c2.textContent = fmtTime(v.t);
+          const c3 = document.createElement('span'); c3.className = 'c3'; c3.textContent = shortUa(v.ua);
+          c3.title = v.ua || '';
+          const c4 = document.createElement('span'); c4.className = 'c4'; c4.textContent = ago(v.t);
+          row.append(c1, c2, c3, c4);
+          vt.appendChild(row);
+        }
+      }
+    } catch (e) {
+      $('#devTbl').innerHTML = '<div class="empty-row">读不到数据，服务是不是停了？</div>';
+    }
+  }
+
+  $('#btnScan').addEventListener('click', () => {
+    $('#devTbl').innerHTML = '<div class="empty-row">扫描中，大约 3 秒…</div>';
+    load(true);
+  });
+
+  load(false);
+  timer = setInterval(() => load(false), 10000);
+})();
+</script>
+</body>
+</html>
