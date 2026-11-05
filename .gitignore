@@ -2,8 +2,9 @@
 config.json
 config.json.tmp
 
-# 中转站收到的文件
+# 中转站：上传落地的文件 + 路径登记表
 .drops/
+.drops.json
 
 # 访客门户：文案与访问日志
 guest.json

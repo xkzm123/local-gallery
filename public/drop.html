@@ -9,12 +9,11 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111' stroke-width='1.8'><path d='M12 16V4M7 9l5-5 5 5'/><path d='M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3'/></svg>">
 <style>
   body { padding-bottom: 40px; }
-  #dropMain { margin: 0 auto; max-width: 920px; padding: 18px 16px 60px; }
+  #main2 { margin: 0 auto; max-width: 980px; padding: 18px 16px 60px; }
 
-  /* 顶部那行局域网地址 */
   .lan-chip {
     display: inline-flex; align-items: center; gap: 6px;
-    max-width: 44vw; padding: 5px 10px;
+    max-width: 42vw; padding: 5px 10px;
     border: 1px solid var(--line); border-radius: 99px;
     background: var(--soft); color: var(--fg-dim);
     font: 11.5px/1 ui-monospace, Menlo, Consolas, monospace;
@@ -22,60 +21,52 @@
   }
   .lan-chip:hover { color: var(--fg); border-color: var(--line-strong); }
 
-  /* 拖放区 */
+  .addbox { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px; }
+  .addbox textarea {
+    width: 100%; min-height: 62px; resize: vertical;
+    border: 0; outline: none; background: transparent; color: var(--fg);
+    font: 12.5px/1.7 ui-monospace, Menlo, Consolas, monospace;
+  }
+  .addbox textarea::placeholder { color: var(--fg-mute); }
+  .addrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .addrow .btn { width: auto; }
+  .addrow .sp { flex: 1; }
+  .addrow .tip { font-size: 11px; color: var(--fg-mute); }
+
   .dz {
-    border: 1.5px dashed var(--line-strong);
-    border-radius: 12px;
-    padding: 46px 20px;
-    text-align: center;
-    background: var(--panel);
-    cursor: pointer;
-    transition: border-color .15s, background .15s, transform .15s;
+    margin-top: 12px;
+    border: 1.5px dashed var(--line-strong); border-radius: 10px;
+    padding: 18px 16px; text-align: center; cursor: pointer;
+    background: transparent; transition: border-color .15s, background .15s;
     -webkit-tap-highlight-color: transparent;
   }
-  .dz:hover { border-color: var(--fg-mute); background: var(--soft); }
-  .dz.over { border-color: var(--fg); background: var(--soft); transform: scale(.995); }
-  .dz-ico { font-size: 26px; line-height: 1; color: var(--fg-dim); margin-bottom: 12px; }
-  .dz-t { font-size: 15px; font-weight: 600; color: var(--fg); }
-  .dz-s { font-size: 12px; color: var(--fg-mute); margin-top: 6px; line-height: 1.7; }
+  .dz:hover, .dz.over { border-color: var(--fg-mute); background: var(--soft); }
+  .dz-t { font-size: 13px; color: var(--fg-dim); }
+  .dz-s { font-size: 11px; color: var(--fg-mute); margin-top: 4px; }
 
-  .sec-t { font-size: 12px; font-weight: 600; color: var(--fg-dim); letter-spacing: .02em; }
+  .sec-head { display: flex; align-items: center; gap: 8px; margin: 24px 0 10px; flex-wrap: wrap; }
+  .sec-t { font-size: 12px; font-weight: 600; color: var(--fg-dim); }
   .sec-t b { font-weight: 400; color: var(--fg-mute); margin-left: 6px; }
-  .sec-head { display: flex; align-items: center; gap: 8px; margin: 26px 0 10px; }
-  .sec-head .btn { width: auto; }
+  .sec-head .btn { width: auto; margin-left: 0; }
+  .sec-head .sp { flex: 1; }
 
-  /* 上传队列 */
-  .qrow {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px; margin-bottom: 6px;
-    border: 1px solid var(--line); border-radius: 8px;
-    background: var(--panel);
-  }
-  .qrow .qname {
-    flex: 1; min-width: 0; font-size: 12.5px; color: var(--fg);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .qrow .qstat { flex: none; font-size: 11px; color: var(--fg-mute); font-variant-numeric: tabular-nums; }
-  .qbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--line); }
-  .qbar i { display: block; height: 100%; width: 0; background: var(--fg); transition: width .12s linear; }
-  .qrow { position: relative; overflow: hidden; }
-  .qrow.ok .qstat { color: #12805c; }
-  .qrow.err .qstat { color: #c0392b; }
-  html[data-theme="dark"] .qrow.ok .qstat { color: #4ade80; }
-  html[data-theme="dark"] .qrow.err .qstat { color: #f87171; }
-
-  /* 文件列表 */
   .dlist { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
-  .drow {
-    display: flex; align-items: center; gap: 10px;
-    padding: 11px 12px; border-bottom: 1px solid var(--line);
-  }
+  .drow { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-bottom: 1px solid var(--line); }
   .drow:last-child { border-bottom: 0; }
   .drow:hover { background: var(--soft); }
-  .dico { flex: none; width: 30px; height: 30px; border-radius: 6px; background: var(--soft);
-          display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--fg-dim); }
+  .drow.gone { opacity: .55; }
+  .dico {
+    flex: none; width: 32px; height: 32px; border-radius: 6px; background: var(--soft);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 600; color: var(--fg-dim); letter-spacing: .02em;
+  }
   .dmain { flex: 1; min-width: 0; }
   .dname { font-size: 13px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dpath {
+    font: 10.5px/1.6 ui-monospace, Menlo, Consolas, monospace;
+    color: var(--fg-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    direction: rtl; text-align: left; margin-top: 1px;
+  }
   .dmeta { font-size: 10.5px; color: var(--fg-mute); margin-top: 2px; font-variant-numeric: tabular-nums; }
   .dact { flex: none; display: flex; gap: 4px; }
   .dact a, .dact button {
@@ -86,16 +77,32 @@
   .dact a:hover, .dact button:hover { background: var(--hover); color: var(--fg); }
   .dact a.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
   .dact a.primary:hover { opacity: .88; color: var(--accent-fg); }
-  .empty-row { padding: 34px 14px; text-align: center; color: var(--fg-mute); font-size: 12px; line-height: 1.9; }
 
-  .hint-line { margin-top: 14px; font-size: 11px; color: var(--fg-mute); line-height: 1.8; }
+  .tag {
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px;
+    background: var(--soft); color: var(--fg-dim); border: 1px solid var(--line); margin-right: 5px;
+  }
+  .tag.ok { color: #12805c; border-color: #12805c33; background: #12805c14; }
+  .tag.warn { color: #a86400; border-color: #a8640033; background: #a8640014; }
+  .tag.bad { color: #c0392b; border-color: #c0392b33; background: #c0392b14; }
+  html[data-theme="dark"] .tag.ok { color: #4ade80; }
+  html[data-theme="dark"] .tag.warn { color: #fbbf24; }
+  html[data-theme="dark"] .tag.bad { color: #f87171; }
+
+  .empty-row { padding: 30px 14px; text-align: center; color: var(--fg-mute); font-size: 12px; line-height: 1.9; }
+  .hint-line { margin-top: 12px; font-size: 11px; color: var(--fg-mute); line-height: 1.9; }
   .hint-line code { background: var(--soft); padding: 1px 5px; border-radius: 4px; font-size: 10.5px; }
 
-  @media (max-width: 760px) {
-    #dropMain { padding: 12px 10px 80px; }
-    .dz { padding: 34px 14px; }
-    .lan-chip { max-width: 52vw; font-size: 10.5px; }
-    .dact a, .dact button { padding: 7px 10px; }
+  .pk-list { flex: 1; overflow-y: auto; padding: 8px; min-height: 220px; max-height: 46vh; }
+  .pk-row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 5px; cursor: pointer; font-size: 12.5px; color: var(--fg-dim); }
+  .pk-row:hover { background: var(--hover); color: var(--fg); }
+  .pk-row svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; flex: none; }
+  .pk-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  @media (max-width: 700px) {
+    #main2 { padding: 12px 10px 80px; }
+    .dpath { display: none; }
+    .dact a, .dact button { padding: 7px 9px; }
   }
 </style>
 </head>
@@ -107,7 +114,7 @@
     <span id="docMeta"></span>
   </div>
   <div class="tb-spacer"></div>
-  <span id="lanChip" class="lan-chip" title="点一下复制这个地址，发给同一 WiFi 下的手机">读取地址…</span>
+  <span id="lanChip" class="lan-chip" title="点一下复制这个地址，发给同一 WiFi 下的设备">读取地址…</span>
   <a class="ibtn" href="/" title="回到图库">
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
   </a>
@@ -116,12 +123,21 @@
   </button>
 </header>
 
-<main id="dropMain">
+<main id="main2">
+
+  <div class="addbox">
+    <textarea id="pathInput" spellcheck="false" placeholder="粘贴文件路径，一行一个，例如：&#10;D:\视频\发布会 4K.mp4&#10;C:\Users\me\Desktop\报告.pdf"></textarea>
+    <div class="addrow">
+      <button id="btnAdd" class="btn primary small">添加</button>
+      <button id="btnPick" class="btn small ghost">浏览文件…</button>
+      <span class="sp"></span>
+      <span class="tip">只登记路径，不复制文件</span>
+    </div>
+  </div>
 
   <div id="dropZone" class="dz">
-    <div class="dz-ico">&#8679;</div>
-    <div class="dz-t">把文件拖到这里</div>
-    <div class="dz-s">或者点一下选文件 · 手机可以直接选照片 / 视频<br>传完的文件会留在电脑上，谁打开这个页面都能下</div>
+    <div class="dz-t">手机上要传文件？拖到这里 / 点一下选</div>
+    <div class="dz-s">只有这条会真的写盘（存到 .drops），传完同样出现在下面的列表里</div>
   </div>
   <input id="fileInput" type="file" multiple hidden>
 
@@ -130,17 +146,36 @@
     <div id="queue"></div>
   </section>
 
-  <section>
-    <div class="sec-head">
-      <span class="sec-t">已收到的文件 <b id="listMeta" class="mono"></b></span>
-      <div class="tb-spacer"></div>
-      <button id="btnClear" class="btn small ghost">清空</button>
-    </div>
-    <div id="list" class="dlist"><div class="empty-row">正在读取…</div></div>
-    <div class="hint-line" id="dirHint"></div>
-  </section>
+  <div class="sec-head">
+    <span class="sec-t">已登记 <b id="listMeta"></b></span>
+    <span class="sp"></span>
+    <button id="btnVerifyAll" class="btn small ghost">全部校验</button>
+    <button id="btnClear" class="btn small ghost">清空列表</button>
+  </div>
+  <div id="list" class="dlist"><div class="empty-row">正在读取…</div></div>
+  <div class="hint-line" id="dirHint"></div>
 
 </main>
+
+<div id="picker" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>选择文件</span>
+      <button id="pkClose" class="ibtn"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="picker-path">
+      <input id="pkPath" type="text" spellcheck="false" placeholder="粘贴路径后回车">
+      <button id="pkGo" class="btn small">前往</button>
+    </div>
+    <div class="pk-list" id="pkList"></div>
+    <div class="modal-foot">
+      <button id="pkUp" class="btn ghost small">上一级</button>
+      <span class="pick-sel" id="pkSel"></span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--fg-mute)">点文件名直接加进列表</span>
+    </div>
+  </div>
+</div>
 
 <div id="toast" class="toast"></div>
 
@@ -148,7 +183,7 @@
 (function () {
   'use strict';
   const $ = (s) => document.querySelector(s);
-  const CHUNK = 4 * 1024 * 1024;     // 4 MiB 一片
+  const CHUNK = 4 * 1024 * 1024;
 
   let toastTimer = 0;
   function toast(msg) {
@@ -156,7 +191,7 @@
     t.textContent = msg;
     t.classList.add('on');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('on'), 1800);
+    toastTimer = setTimeout(() => t.classList.remove('on'), 2000);
   }
 
   function fmtSize(n) {
@@ -166,96 +201,108 @@
     while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
     return (i ? n.toFixed(1) : Math.round(n)) + ' ' + u[i];
   }
-
-  function fmtAgo(ms) {
-    const d = Math.max(0, Date.now() - ms);
-    if (d < 60e3) return '刚刚';
-    if (d < 3600e3) return Math.floor(d / 60e3) + ' 分钟前';
-    if (d < 86400e3) return Math.floor(d / 3600e3) + ' 小时前';
-    const dt = new Date(ms);
-    return (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' +
-      String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+  function fmtTime(ms) {
+    if (!ms) return '';
+    const d = new Date(ms);
+    const p = (n) => String(n).padStart(2, '0');
+    return p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
-
   function iconFor(name) {
     const ext = (name.split('.').pop() || '').toLowerCase();
     if (/^(png|jpe?g|gif|webp|bmp|avif|heic)$/.test(ext)) return 'IMG';
-    if (/^(mp4|mov|mkv|avi|webm)$/.test(ext)) return 'VID';
-    if (/^(mp3|flac|wav|m4a|aac)$/.test(ext)) return 'AUD';
-    if (/^(zip|rar|7z|tar|gz)$/.test(ext)) return 'ZIP';
+    if (/^(mp4|mov|mkv|avi|webm|flv)$/.test(ext)) return 'VID';
+    if (/^(mp3|flac|wav|m4a|aac|ape)$/.test(ext)) return 'AUD';
+    if (/^(zip|rar|7z|tar|gz|iso)$/.test(ext)) return 'ZIP';
     if (/^(pdf|docx?|xlsx?|pptx?|txt|md)$/.test(ext)) return 'DOC';
+    if (/^(exe|msi|apk|dmg)$/.test(ext)) return 'APP';
     return 'FILE';
   }
-
-  // ---------------------------------------------------------- 主题
-  function applyTheme(dark) {
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    const m = document.querySelector('meta[name=theme-color]');
-    if (m) m.setAttribute('content', dark ? '#0d0e10' : '#ffffff');
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
+
   let dark = false;
   try { dark = localStorage.getItem('gallery-theme') === 'dark'; } catch (e) { }
+  function applyTheme(d) {
+    document.documentElement.dataset.theme = d ? 'dark' : 'light';
+    const m = document.querySelector('meta[name=theme-color]');
+    if (m) m.setAttribute('content', d ? '#0d0e10' : '#ffffff');
+  }
   applyTheme(dark);
   $('#btnTheme').addEventListener('click', () => {
-    dark = !dark;
-    applyTheme(dark);
+    dark = !dark; applyTheme(dark);
     try { localStorage.setItem('gallery-theme', dark ? 'dark' : 'light'); } catch (e) { }
   });
 
   // ---------------------------------------------------------- 列表
-  function render(d) {
-    const list = $('#list');
-    const meta = $('#listMeta');
-    meta.textContent = d.total ? d.total + ' 个 · ' + fmtSize(d.bytes) : '';
-    const hint = $('#dirHint');
-    if (d.dir) hint.innerHTML = '文件保存在 <code>' + escapeHtml(d.dir) + '</code>，直接用资源管理器打开就能拿。';
+  let lastData = { items: [] };
 
+  function render(d) {
+    lastData = d;
+    $('#listMeta').textContent = d.total ? d.total + ' 项 · ' + fmtSize(d.bytes) : '';
+
+    const list = $('#list');
     list.innerHTML = '';
-    if (!d.files || !d.files.length) {
-      const e = document.createElement('div');
-      e.className = 'empty-row';
-      e.innerHTML = '还没有文件。<br>上面拖一个进来，另一台设备刷新就能看到。';
-      list.appendChild(e);
+    if (!d.items || !d.items.length) {
+      list.innerHTML = '<div class="empty-row">还没有登记任何文件。<br>上面粘一个路径，或者点「浏览文件…」挑一个。</div>';
       return;
     }
-    for (const f of d.files) {
+
+    for (const it of d.items) {
       const row = document.createElement('div');
-      row.className = 'drow';
+      row.className = 'drow' + (it.missing ? ' gone' : '');
 
       const ico = document.createElement('div');
       ico.className = 'dico';
-      ico.textContent = iconFor(f.n);
+      ico.textContent = iconFor(it.n);
 
       const main = document.createElement('div');
       main.className = 'dmain';
+
       const nm = document.createElement('div');
       nm.className = 'dname';
-      nm.textContent = f.n;
-      nm.title = f.n;
+      nm.textContent = it.n;
+      nm.title = it.n;
+
+      const p = document.createElement('div');
+      p.className = 'dpath';
+      p.textContent = it.p;
+      p.title = it.p;
+
       const mt = document.createElement('div');
       mt.className = 'dmeta';
-      mt.textContent = fmtSize(f.s) + ' · ' + fmtAgo(f.t);
-      main.append(nm, mt);
+      if (it.missing) {
+        mt.innerHTML = '<span class="tag bad">文件不在了</span>' + fmtSize(it.s);
+      } else {
+        let html = '';
+        if (it.changed) html += '<span class="tag warn">已变更</span>';
+        else if (it.hash) html += '<span class="tag ok">md5 ' + it.hash.slice(0, 8) + '</span>';
+        else html += '<span class="tag">未校验</span>';
+        mt.innerHTML = html + fmtSize(it.s) + ' · ' + fmtTime(it.t);
+      }
+      main.append(nm, p, mt);
 
       const act = document.createElement('div');
       act.className = 'dact';
-      const a = document.createElement('a');
-      a.className = 'primary';
-      a.href = f.u;
-      a.setAttribute('download', f.n);
-      a.textContent = '下载';
-      const del = document.createElement('button');
-      del.textContent = '删除';
-      del.addEventListener('click', () => removeFile(f.n));
-      act.append(a, del);
+      if (!it.missing) {
+        const a = document.createElement('a');
+        a.className = 'primary';
+        a.href = it.u;
+        a.setAttribute('download', it.n);
+        a.textContent = '下载';
+        act.appendChild(a);
+      }
+      const vb = document.createElement('button');
+      vb.textContent = '校验';
+      vb.addEventListener('click', () => verifyOne(it.id));
+      const rb = document.createElement('button');
+      rb.textContent = '移除';
+      rb.addEventListener('click', () => removeItem(it));
+      act.append(vb, rb);
 
       row.append(ico, main, act);
       list.appendChild(row);
     }
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
   async function refresh() {
@@ -267,54 +314,179 @@
     }
   }
 
-  async function removeFile(name) {
-    if (!confirm('删除「' + name + '」？文件会从磁盘上删掉。')) return;
+  async function addPaths(paths) {
+    if (!paths.length) return;
     try {
-      const r = await fetch('/api/drop/file?name=' + encodeURIComponent(name), { method: 'DELETE' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      toast('已删除');
+      const r = await fetch('/api/drop/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: paths }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      const okN = (j.added || []).length;
+      const dupN = (j.dup || []).length;
+      const errs = j.errors || [];
+      const msg = [];
+      if (okN) msg.push('加了 ' + okN + ' 个');
+      if (dupN) msg.push('已存在 ' + dupN + ' 个');
+      if (errs.length) msg.push('失败 ' + errs.length + ' 个：' + errs[0].error);
+      toast(msg.join('，') || '没有变化');
       refresh();
-    } catch (e) { toast('删除失败：' + e.message); }
+    } catch (e) {
+      toast('添加失败：' + e.message);
+    }
   }
 
+  async function verifyOne(id) {
+    toast('正在算 md5…');
+    try {
+      const r = await fetch('/api/drop/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id }),
+      });
+      const j = await r.json();
+      const res = (j.results || [])[0];
+      if (!res) throw new Error('没有结果');
+      if (res.reason === 'missing') toast('文件已经不在了');
+      else if (res.reason === 'read-failed') toast('读不了这个文件');
+      else if (res.ok) toast('校验通过 · ' + String(res.hash || '').slice(0, 12));
+      else toast('内容变了，md5 对不上');
+      refresh();
+    } catch (e) {
+      toast('校验失败：' + e.message);
+    }
+  }
+
+  async function removeItem(it) {
+    if (!confirm('从列表移除「' + it.n + '」？\n（只删这条记录，磁盘上的文件不会动）')) return;
+    try {
+      const r = await fetch('/api/drop/item?id=' + encodeURIComponent(it.id), { method: 'DELETE' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      toast('已移除');
+      refresh();
+    } catch (e) {
+      toast('移除失败：' + e.message);
+    }
+  }
+
+  $('#btnAdd').addEventListener('click', () => {
+    const raw = $('#pathInput').value || '';
+    const paths = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    if (!paths.length) { toast('先粘一个路径'); return; }
+    addPaths(paths).then(() => { $('#pathInput').value = ''; });
+  });
+
+  $('#pathInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#btnAdd').click(); }
+  });
+
+  $('#btnVerifyAll').addEventListener('click', async () => {
+    if (!lastData.items.length) return;
+    toast('正在算 md5，大文件要等一会…');
+    try {
+      const r = await fetch('/api/drop/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const j = await r.json();
+      const bad = (j.results || []).filter((x) => !x.ok);
+      toast(bad.length ? bad.length + ' 个对不上' : '全部校验通过');
+      refresh();
+    } catch (e) {
+      toast('校验失败：' + e.message);
+    }
+  });
+
   $('#btnClear').addEventListener('click', async () => {
-    if (!confirm('清空中转站里的全部文件？')) return;
+    if (!confirm('清空列表？\n（只清记录，磁盘上的文件都不会动）')) return;
     try {
       const r = await fetch('/api/drop/all', { method: 'DELETE' });
       const j = await r.json();
-      toast('已清空 ' + (j.removed || 0) + ' 个文件');
+      toast('已清空 ' + (j.removed || 0) + ' 条记录');
       refresh();
-    } catch (e) { toast('清空失败：' + e.message); }
+    } catch (e) {
+      toast('清空失败：' + e.message);
+    }
   });
 
-  // ---------------------------------------------------------- 上传
+  // ---------------------------------------------------------- 文件选择器
+  async function browse(p) {
+    try {
+      const r = await fetch('/api/browse?files=1&p=' + encodeURIComponent(p || ''));
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+      $('#pkPath').value = d.path || '';
+      $('#pkSel').textContent = d.path || '';
+      const list = $('#pkList');
+      list.innerHTML = '';
+      for (const sub of d.dirs || []) {
+        const row = document.createElement('div');
+        row.className = 'pk-row';
+        row.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="nm"></span>';
+        row.querySelector('.nm').textContent = sub.n;
+        row.addEventListener('click', () => browse(sub.p));
+        list.appendChild(row);
+      }
+      for (const f of d.files || []) {
+        const row = document.createElement('div');
+        row.className = 'pk-row';
+        row.innerHTML = '<svg viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg><span class="nm"></span>';
+        row.querySelector('.nm').textContent = f.n;
+        row.addEventListener('click', () => addPaths([f.p]));
+        list.appendChild(row);
+      }
+      if (!(d.dirs || []).length && !(d.files || []).length) {
+        const e = document.createElement('div');
+        e.className = 'empty-row';
+        e.textContent = d.drives ? '没有检测到盘符' : '这个文件夹是空的';
+        list.appendChild(e);
+      }
+      $('#pkUp').disabled = !d.parent;
+      $('#pkUp').__parent = d.parent || '';
+    } catch (e) {
+      toast('打不开：' + e.message);
+    }
+  }
+
+  $('#btnPick').addEventListener('click', () => {
+    $('#picker').hidden = false;
+    browse('');
+  });
+  $('#pkClose').addEventListener('click', () => { $('#picker').hidden = true; });
+  $('#pkGo').addEventListener('click', () => browse($('#pkPath').value.trim()));
+  $('#pkPath').addEventListener('keydown', (e) => { if (e.key === 'Enter') browse(e.target.value.trim()); });
+  $('#pkUp').addEventListener('click', () => { const p = $('#pkUp').__parent; if (p) browse(p); });
+
+  // ---------------------------------------------------------- 上传（只有这条会写盘）
   function addRow(file) {
     $('#queueWrap').hidden = false;
     const row = document.createElement('div');
-    row.className = 'qrow';
+    row.style.cssText = 'position:relative;display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden;';
     const nm = document.createElement('div');
-    nm.className = 'qname';
+    nm.style.cssText = 'flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
     nm.textContent = file.name;
     const st = document.createElement('div');
-    st.className = 'qstat';
+    st.style.cssText = 'flex:none;font-size:11px;color:var(--fg-mute);font-variant-numeric:tabular-nums;';
     st.textContent = '等待…';
     const bar = document.createElement('div');
-    bar.className = 'qbar';
+    bar.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--line);';
     const fill = document.createElement('i');
+    fill.style.cssText = 'display:block;height:100%;width:0;background:var(--fg);transition:width .12s linear;';
     bar.appendChild(fill);
     row.append(nm, st, bar);
     $('#queue').appendChild(row);
 
     return {
-      row,
-      set(pct, text, cls) {
+      set(pct, text) {
         fill.style.width = Math.max(0, Math.min(100, pct * 100)).toFixed(1) + '%';
         st.textContent = text;
-        row.className = 'qrow' + (cls ? ' ' + cls : '');
       },
-      finish(text, cls) {
-        this.set(1, text, cls);
-        setTimeout(() => { try { row.remove(); } catch (e) { } }, cls === 'err' ? 6000 : 2500);
+      finish(text) {
+        this.set(1, text);
+        setTimeout(() => { try { row.remove(); } catch (e) { } }, 2500);
       },
     };
   }
@@ -331,7 +503,6 @@
         resolve({ status: xhr.status, body: body || {} });
       };
       xhr.onerror = () => reject(new Error('网络中断'));
-      xhr.ontimeout = () => reject(new Error('超时'));
       xhr.send(blob);
     });
   }
@@ -340,78 +511,47 @@
     const row = addRow(file);
     const t0 = performance.now();
     let off = 0;
-
-    // 断点续传：先问服务端已经收了多少
     try {
       const r = await fetch('/api/drop/upload?name=' + encodeURIComponent(file.name) + '&size=' + file.size);
       const j = await r.json();
-      if (j && j.received > 0 && j.received < file.size) {
-        off = j.received;
-        toast('「' + file.name + '」从 ' + fmtSize(off) + ' 处续传');
-      }
+      if (j && j.received > 0 && j.received < file.size) off = j.received;
     } catch (e) { }
 
-    const base = off;
     while (off < file.size) {
       const end = Math.min(off + CHUNK, file.size);
-      const blob = file.slice(off, end);
-      const chunkStart = off;
-
+      const start = off;
       let res;
       try {
-        res = await putChunk(file.name, blob, off, end, file.size, (loaded) => {
-          const done = chunkStart + loaded;
+        res = await putChunk(file.name, file.slice(off, end), off, end, file.size, (loaded) => {
+          const done = start + loaded;
           const sec = Math.max(0.001, (performance.now() - t0) / 1000);
-          const speed = (done - base) / sec;
-          const left = speed > 0 ? (file.size - done) / speed : 0;
-          row.set(done / file.size,
-            fmtSize(done) + ' / ' + fmtSize(file.size) + '  ·  ' + fmtSize(speed) + '/s  ·  剩 ' + fmtLeft(left));
+          row.set(done / file.size, fmtSize(done) + ' / ' + fmtSize(file.size) + ' · ' + fmtSize(done / sec) + '/s');
         });
       } catch (e) {
-        row.finish('中断：' + e.message, 'err');
+        row.finish('中断：' + e.message);
         return false;
       }
-
-      if (res.status === 409) {
-        off = Number(res.body.expect) || 0;
-        continue;
-      }
-      if (res.status < 200 || res.status >= 300) {
-        row.finish('失败：HTTP ' + res.status + (res.body.error ? ' ' + res.body.error : ''), 'err');
-        return false;
-      }
-      if (res.body.done) {
-        const sec = Math.max(0.001, (performance.now() - t0) / 1000);
-        row.finish('完成 · ' + fmtSize(file.size) + ' · ' + fmtSize(file.size / sec) + '/s', 'ok');
-        return true;
-      }
+      if (res.status === 409) { off = Number(res.body.expect) || 0; continue; }
+      if (res.status < 200 || res.status >= 300) { row.finish('失败：HTTP ' + res.status); return false; }
+      if (res.body.done) { row.finish('完成'); return true; }
       off = end;
     }
-    row.finish('完成', 'ok');
+    row.finish('完成');
     return true;
-  }
-
-  function fmtLeft(sec) {
-    if (!isFinite(sec) || sec <= 0) return '--';
-    if (sec < 60) return Math.ceil(sec) + 's';
-    if (sec < 3600) return Math.ceil(sec / 60) + 'm';
-    return (sec / 3600).toFixed(1) + 'h';
   }
 
   let uploading = false;
   const pending = [];
-
   async function pump() {
     if (uploading) return;
     uploading = true;
     while (pending.length) {
-      const file = pending.shift();
-      try { await uploadOne(file); } catch (e) { toast('上传出错：' + e.message); }
+      const f = pending.shift();
+      try { await uploadOne(f); } catch (e) { toast('上传出错：' + e.message); }
     }
     uploading = false;
     refresh();
   }
-
   function enqueue(files) {
     const arr = Array.from(files || []);
     if (!arr.length) return;
@@ -419,66 +559,45 @@
     pump();
   }
 
-  // ---------------------------------------------------------- 拖放 / 选择
   const zone = $('#dropZone');
   const input = $('#fileInput');
-
   zone.addEventListener('click', () => input.click());
   input.addEventListener('change', () => { enqueue(input.files); input.value = ''; });
-
   let depth = 0;
   const hasFiles = (dt) => Array.from((dt && dt.types) || []).indexOf('Files') >= 0;
-  window.addEventListener('dragenter', (e) => {
-    if (!hasFiles(e.dataTransfer)) return;
-    depth++;
-    zone.classList.add('over');
-  });
+  window.addEventListener('dragenter', (e) => { if (!hasFiles(e.dataTransfer)) return; depth++; zone.classList.add('over'); });
   window.addEventListener('dragover', (e) => { if (hasFiles(e.dataTransfer)) e.preventDefault(); });
-  window.addEventListener('dragleave', () => {
-    depth = Math.max(0, depth - 1);
-    if (!depth) zone.classList.remove('over');
-  });
+  window.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) zone.classList.remove('over'); });
   window.addEventListener('drop', (e) => {
     if (!hasFiles(e.dataTransfer)) return;
-    e.preventDefault();
-    depth = 0;
-    zone.classList.remove('over');
+    e.preventDefault(); depth = 0; zone.classList.remove('over');
     enqueue(e.dataTransfer.files);
   });
 
-  // ---------------------------------------------------------- 局域网地址
+  // ---------------------------------------------------------- 启动
   (async function boot() {
+    await refresh();
     try {
       const r = await fetch('/api/drop/list');
       const d = await r.json();
-      render(d);
       const ip = (d.lan && d.lan[0] && d.lan[0].ip) || location.hostname;
-      // 自己就是从某个内网 IP 打开的，那个 IP 一定是对的；只有用 localhost 打开时才靠猜
       const host = location.hostname;
       const shown = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) && !/^127\./.test(host) ? host : ip;
       const url = 'http://' + shown + ':' + d.port + '/drop';
       const chip = $('#lanChip');
       chip.textContent = url;
-      chip.title = '点一下复制，发给同一 WiFi 下的手机';
       chip.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(url);
-          toast('已复制：' + url);
-        } catch (e) {
-          toast(url);
-        }
+        try { await navigator.clipboard.writeText(url); toast('已复制：' + url); }
+        catch (e) { toast(url); }
       });
-    } catch (e) {
-      $('#list').innerHTML = '<div class="empty-row">连不上服务，确认命令行窗口还开着。</div>';
-    }
+      const hint = $('#dirHint');
+      hint.innerHTML = '下载直接从原路径流式读，不占额外磁盘；只有手机上传的文件会写到 <code>.drops</code> 目录。移除 / 清空只删记录，不删你的文件。';
+      hint.title = '上传目录：' + (d.dir || '');
+    } catch (e) { }
 
-    // 实时刷新：别的设备传完 / 删完，这边立刻变
     try {
       const es = new EventSource('/api/drop/events');
-      es.onmessage = (ev) => {
-        try { render(JSON.parse(ev.data)); } catch (e) { }
-      };
-      es.onerror = () => { /* 浏览器会自己重连 */ };
+      es.onmessage = (ev) => { try { render(JSON.parse(ev.data)); } catch (e) { } };
     } catch (e) { }
   })();
 })();

@@ -25,6 +25,7 @@ const path = require('path');
 const os = require('os');
 const zlib = require('zlib');
 const dgram = require('dgram');
+const crypto = require('crypto');
 const { execSync, execFile } = require('child_process');
 
 // ---------------------------------------------------------------- 参数
@@ -500,15 +501,15 @@ async function listRecursive(relDir) {
     return { path: toRel(abs0), files: out, total: out.length, truncated, recursive: true };
 }
 
-/** 目录选择器用：列任意路径下的子目录（不读文件内容，只列名字） */
-async function browseDir(target) {
+/** 目录选择器用：列任意路径下的子目录（不读文件内容，只列名字）；withFiles 时连文件名一起列 */
+async function browseDir(target, withFiles) {
     if (process.platform === 'win32' && (!target || /^[A-Za-z]:?$/.test(target))) {
         const drives = [];
         for (let i = 67; i <= 90; i++) {
             const d = String.fromCharCode(i) + ':\\';
             if (isDir(d)) drives.push({ n: d, p: d });
         }
-        return { path: '', parent: null, dirs: drives, drives: true };
+        return { path: '', parent: null, dirs: drives, drives: true, files: [] };
     }
     const abs = path.resolve(target);
     if (!isDir(abs)) throw fail(404, '目录不存在');
@@ -517,8 +518,14 @@ async function browseDir(target) {
         .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
         .map((e) => ({ n: e.name, p: path.join(abs, e.name) }))
         .sort((a, b) => a.n.localeCompare(b.n, 'zh-CN', { numeric: true }));
+    const files = withFiles
+        ? ents
+            .filter((e) => e.isFile() && !e.name.startsWith('.'))
+            .map((e) => ({ n: e.name, p: path.join(abs, e.name) }))
+            .sort((a, b) => a.n.localeCompare(b.n, 'zh-CN', { numeric: true }))
+        : [];
     const parent = path.dirname(abs);
-    return { path: abs, parent: parent === abs ? null : parent, dirs };
+    return { path: abs, parent: parent === abs ? null : parent, dirs, files };
 }
 
 function quickPlaces() {
@@ -983,25 +990,136 @@ function dropPath(name) {
     return abs;
 }
 
-async function listDrops() {
-    const dir = dropDir();
-    const ents = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
-    const files = [];
-    let bytes = 0;
-    for (const e of ents) {
-        if (!e.isFile() || e.name.endsWith(PART_SUFFIX)) continue;
-        let st;
-        try { st = await fsp.stat(path.join(dir, e.name)); } catch (err) { continue; }
-        files.push({
-            n: e.name,
-            s: st.size,
-            t: Math.round(st.mtimeMs),
-            u: '/d/' + encodeURIComponent(e.name),
-        });
-        bytes += st.size;
+// ---------------------------------------------------------------- 中转站（路径引用）
+// 不复制文件：只记「路径 + 大小 + 修改时间 + md5」，下载时直接从原路径流式读。
+// 只有「手机上传来」的文件才落盘到 DROP_DIR，落盘后同样登记成一条路径记录。
+const DROP_DB = path.join(APP_DIR, '.drops.json');
+const HASH_MAX = 512 * 1024 * 1024;   // 超过这个大小不在添加时自动算 md5，交给「校验」按钮
+
+let dropItems = [];                   // [{ id, path, name, size, mtime, hash, hashAt, addedAt, source }]
+let dropSaveTimer = 0;
+
+function loadDropDb() {
+    try {
+        const j = JSON.parse(fs.readFileSync(DROP_DB, 'utf8'));
+        dropItems = Array.isArray(j.items) ? j.items.filter((x) => x && x.path) : [];
+    } catch (e) {
+        dropItems = [];
     }
-    files.sort((a, b) => b.t - a.t);
-    return { dir, files, total: files.length, bytes, lan: lanAddresses(), port: PORT };
+}
+
+function saveDropDb() {
+    clearTimeout(dropSaveTimer);
+    dropSaveTimer = setTimeout(() => {
+        try { fs.writeFileSync(DROP_DB, JSON.stringify({ items: dropItems }, null, 2)); } catch (e) { }
+    }, 300);
+}
+
+function newDropId() {
+    return crypto.randomBytes(4).toString('hex');
+}
+
+/** 流式算 md5，几 GB 的文件也不会把内存吃掉 */
+function md5File(abs) {
+    return new Promise((resolve) => {
+        const h = crypto.createHash('md5');
+        let failed = false;
+        const rs = fs.createReadStream(abs);
+        rs.on('data', (c) => h.update(c));
+        rs.on('end', () => resolve(failed ? null : h.digest('hex')));
+        rs.on('error', () => { failed = true; resolve(null); });
+    });
+}
+
+/** 列表里每条都 stat 一次：O(1)，比复制整个文件便宜几个数量级 */
+function dropStat(item) {
+    try {
+        const st = fs.statSync(item.path);
+        if (!st.isFile()) return { missing: true };
+        const mtime = Math.round(st.mtimeMs);
+        return {
+            missing: false,
+            size: st.size,
+            mtime,
+            changed: st.size !== item.size || mtime !== item.mtime,
+        };
+    } catch (e) {
+        return { missing: true };
+    }
+}
+
+async function addDropPath(raw, source) {
+    const p = path.resolve(String(raw == null ? '' : raw).trim());
+    if (!p) throw fail(400, '空路径');
+    let st;
+    try { st = fs.statSync(p); } catch (e) { throw fail(404, '路径不存在：' + p); }
+    if (!st.isFile()) throw fail(400, '不是文件：' + p);
+
+    const exist = dropItems.find((x) => x.path.toLowerCase() === p.toLowerCase());
+    if (exist) return { item: exist, dup: true };
+
+    const item = {
+        id: newDropId(),
+        path: p,
+        name: path.basename(p),
+        size: st.size,
+        mtime: Math.round(st.mtimeMs),
+        hash: null,
+        hashAt: 0,
+        addedAt: Date.now(),
+        source: source || 'path',
+    };
+    dropItems.unshift(item);
+    if (dropItems.length > 500) dropItems.length = 500;
+    saveDropDb();
+
+    // 小文件添加时顺手算一份 md5，之后「校验」就有基线可比
+    if (st.size <= HASH_MAX) {
+        md5File(p).then((h) => {
+            if (h && !item.hash) { item.hash = h; item.hashAt = Date.now(); saveDropDb(); broadcastDrops(); }
+        });
+    }
+    return { item, dup: false };
+}
+
+async function verifyDrops(id) {
+    const targets = id ? dropItems.filter((x) => x.id === id) : dropItems.slice();
+    const out = [];
+    for (const it of targets) {
+        const s = dropStat(it);
+        if (s.missing) { out.push({ id: it.id, ok: false, reason: 'missing' }); continue; }
+        const h = await md5File(it.path);
+        if (!h) { out.push({ id: it.id, ok: false, reason: 'read-failed' }); continue; }
+        const ok = it.hash ? h === it.hash : true;   // 第一次校验只建立基线
+        it.hash = h;
+        it.hashAt = Date.now();
+        out.push({ id: it.id, ok, reason: ok ? 'ok' : 'hash-mismatch', hash: h });
+    }
+    saveDropDb();
+    broadcastDrops();
+    return out;
+}
+
+function listDrops() {
+    const items = dropItems.map((it) => {
+        const s = dropStat(it);
+        return {
+            id: it.id,
+            n: it.name,
+            p: it.path,
+            s: s.missing ? it.size : s.size,
+            t: s.missing ? it.mtime : s.mtime,
+            added: it.addedAt,
+            hash: it.hash,
+            hashAt: it.hashAt,
+            source: it.source,
+            missing: !!s.missing,
+            changed: !!s.changed,
+            u: '/d/' + it.id,
+        };
+    });
+    const bytes = items.reduce((a, b) => a + (b.missing ? 0 : b.s || 0), 0);
+    return { items, total: items.length, bytes, dir: DROP_DIR, lan: lanAddresses(), port: PORT };
 }
 
 function broadcastDrops() {
@@ -1141,6 +1259,33 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // 加一条「路径引用」：不复制文件，只登记路径 + 大小 + 时间
+        if (p === '/api/drop/add' && req.method === 'POST') {
+            const body = await readBody(req);
+            const paths = Array.isArray(body.paths) ? body.paths : (body.path ? [body.path] : []);
+            if (!paths.length) throw fail(400, '没有给路径');
+            const added = [], dup = [], errors = [];
+            for (const raw of paths) {
+                try {
+                    const r = await addDropPath(raw, body.source);
+                    (r.dup ? dup : added).push(r.item);
+                } catch (e) {
+                    errors.push({ path: raw, error: e.message });
+                }
+            }
+            broadcastDrops();
+            sendJSON(req, res, 200, { added, dup, errors, total: dropItems.length });
+            return;
+        }
+
+        // 校验：重新算 md5，和登记时的基线比对
+        if (p === '/api/drop/verify' && req.method === 'POST') {
+            const body = await readBody(req).catch(() => ({}));
+            const results = await verifyDrops(body && body.id ? body.id : '');
+            sendJSON(req, res, 200, { results });
+            return;
+        }
+
         // SSE：别的设备传完 / 删完，这边列表自动刷新
         if (p === '/api/drop/events') {
             res.writeHead(200, {
@@ -1195,7 +1340,9 @@ const server = http.createServer(async (req, res) => {
             try { size = (await fsp.stat(part)).size; } catch (e) { }
             if (total && size >= total) {
                 const final = uniqueDropName(name);
-                await fsp.rename(part, path.join(dropDir(), final));
+                const absUp = path.join(dropDir(), final);
+                await fsp.rename(part, absUp);
+                await addDropPath(absUp, 'upload');   // 上传完也登记成一条路径记录，和引用进来的混在一起
                 broadcastDrops();
                 sendJSON(req, res, 200, { done: true, name: final, size, received: size });
             } else {
@@ -1204,37 +1351,37 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
-        if (p === '/api/drop/file' && req.method === 'DELETE') {
-            const abs = dropPath(safeDropName(u.searchParams.get('name') || ''));
-            let ok = true;
-            try { await fsp.unlink(abs); } catch (e) { ok = false; }
-            if (!ok) throw fail(404, '文件不存在');
+        // 移除：只删这条记录，绝不动磁盘上的原文件
+        if (p === '/api/drop/item' && req.method === 'DELETE') {
+            const id = u.searchParams.get('id') || '';
+            const i = dropItems.findIndex((x) => x.id === id);
+            if (i < 0) throw fail(404, '没有这一项');
+            dropItems.splice(i, 1);
+            saveDropDb();
             broadcastDrops();
             sendJSON(req, res, 200, { ok: true });
             return;
         }
 
         if (p === '/api/drop/all' && req.method === 'DELETE') {
-            const dir = dropDir();
-            const ents = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
-            let removed = 0;
-            for (const e of ents) {
-                if (!e.isFile()) continue;
-                try { await fsp.unlink(path.join(dir, e.name)); removed++; } catch (err) { }
-            }
+            const removed = dropItems.length;
+            dropItems = [];
+            saveDropDb();
             broadcastDrops();
             sendJSON(req, res, 200, { ok: true, removed });
             return;
         }
 
-        // 下载：直接复用 sendFile，Range / 206 / 416 都是现成的
+        // 下载：按 id 找到登记过的路径，直接从原文件流式读（Range / 206 / 416 都是现成的）
         if (p.startsWith('/d/')) {
-            const raw = decodeURIComponent(p.slice(3));
-            const abs = dropPath(safeDropName(raw));
-            const st = await fsp.stat(abs).catch(() => null);
-            if (!st || !st.isFile()) throw fail(404, '文件不存在');
-            res.setHeader('Content-Disposition', contentDisposition(path.basename(abs)));
-            sendFile(req, res, abs, st, 'no-store');
+            let id = decodeURIComponent(p.slice(3));
+            if (id.endsWith('/')) id = id.slice(0, -1);
+            const it = dropItems.find((x) => x.id === id);
+            if (!it) throw fail(404, '没有这一项');
+            const st = await fsp.stat(it.path).catch(() => null);
+            if (!st || !st.isFile()) throw fail(410, '文件已经不在了：' + it.path);
+            res.setHeader('Content-Disposition', contentDisposition(it.name));
+            sendFile(req, res, it.path, st, 'no-store');
             return;
         }
 
@@ -1255,7 +1402,7 @@ const server = http.createServer(async (req, res) => {
 
         if (p === '/api/browse') {
             const target = u.searchParams.get('p') || '';
-            sendJSON(req, res, 200, await browseDir(target));
+            sendJSON(req, res, 200, await browseDir(target, u.searchParams.get('files') === '1'));
             return;
         }
 
@@ -1373,6 +1520,7 @@ readConfig();
 // 中转站要传大文件：Node 18+ 默认 requestTimeout = 300000ms，慢 WiFi 传几 GB 必被掐断
 server.requestTimeout = 0;
 loadGuestLog();
+loadDropDb();
 startListening(0);
 
 /**

@@ -114,20 +114,20 @@
 
 ### 中转站（局域网文件互传）
 
-不需要装任何东西，不需要扫码，不需要注册。
+**核心：不复制文件。** 电脑上的文件只登记一条「路径 + 大小 + 修改时间 + md5」，别人下载时直接从原路径流式读——4GB 的视频不会多占一个字节磁盘，也不用等它复制一遍。
 
-1. 电脑打开图库，点顶栏的 **⤴** 进中转站
-2. 把文件拖进虚线框（手机可以直接选照片 / 视频）
-3. 另一台设备打开顶栏显示的那个地址（`http://192.168.x.x:8710/drop`），文件列表自动出现，点「下载」
+1. 点顶栏的 **⤴** 进中转站
+2. 粘贴路径（一行一个），或者点「浏览文件…」挑一个
+3. 另一台设备打开顶栏显示的那个地址（`http://192.168.x.x:8710/drop`），点「下载」
 
 细节：
 
-- **断点续传**：4 MiB 分片，传一半断了、刷新页面、手机切后台挂起，回来接着传
-- **同名不覆盖**：`报告.pdf` 已存在就自动存成 `报告 (1).pdf`
-- **文件就在磁盘上**：默认 `gallery/.drops/`，用资源管理器直接能拿，改目录用 `--drop="D:\中转站"`
-- **不做鉴权**：局域网内谁打开这个页面谁就能看、能下、能删。想清理就点「清空」
-- **实时刷新**：SSE 推送，一台设备传完，另一台列表自动变
-- 下载复用图库那套 Range / 206，几 GB 的蓝光原盘也不会把内存撑爆
+- **校验**：登记时自动算 md5（≤512MB），之后随时点「校验」重算比对；文件被改过标「已变更」，被删了标「文件不在了」
+- **只删记录**：点「移除」或「清空列表」只删这条登记，磁盘上的原文件一个都不会动
+- **手机传文件**：拖进虚线框才会真的写盘（存到 `.drops`），传完同样进列表；4 MiB 分片 + 断点续传
+- **实时刷新**：SSE 推送，一台设备加了 / 删了，另一台列表自动变
+- 下载复用图库那套 Range / 206，几 GB 的原盘也不会把内存撑爆
+- **不做鉴权**：局域网内谁打开这个页面谁就能看、能下；但「下载」只能下**登记过的**路径
 
 ### 访客门户（连上 WiFi 自动弹说明页）
 
@@ -226,7 +226,7 @@
 node server.js                       # 默认 8710
 node server.js --port=8711           # 换端口
 node server.js --root="D:\图片"      # 直接指定图库目录
-node server.js --drop="D:\中转站"    # 换中转站存放目录
+node server.js --drop="D:\中转站"    # 换「手机上传」的落地目录（路径引用的文件不受影响）
 node server.js --portal              # 80 端口起门户跳转
 node server.js --dns                 # 53 端口劫持联网探测域名
 node server.js --dns-upstream=8.8.8.8  # 换 DNS 上游
@@ -249,12 +249,14 @@ node server.js --no-kill             # 端口被占时不自动清理
 | `GET /api/browse?p=DIR` | 列任意目录的子文件夹（目录选择器用） |
 | `GET /api/list?p=REL` | 图库内的内容；`&recursive=1` 递归 |
 | `GET /img?p=REL` | 图片字节，支持 Range / ETag / 强缓存 |
-| `GET /api/drop/list` | 中转站文件列表 |
+| `GET /api/drop/list` | 登记列表（每条实时 stat：还在不在 / 大小 / 是否变更） |
+| `POST /api/drop/add` | 登记路径 `{ paths: [...] }`，不复制文件 |
+| `POST /api/drop/verify` | 重算 md5 比对 `{ id? }`，不传 id 就全量校验 |
 | `GET /api/drop/upload?name=X&size=N` | 查询已收字节（断点续传） |
-| `PUT /api/drop/upload?name=X` | 分片上传，需 `Content-Range: bytes a-b/total` |
+| `PUT /api/drop/upload?name=X` | 分片上传，需 `Content-Range: bytes a-b/total`（唯一会写盘的入口） |
 | `GET /api/drop/events` | SSE，列表变化实时推送 |
-| `GET /d/:name` | 下载中转站文件（`Content-Disposition: attachment`） |
-| `DELETE /api/drop/file?name=X` · `/api/drop/all` | 删除单个 / 清空 |
+| `GET /d/:id` | 下载（从登记的原路径流式读，支持 Range） |
+| `DELETE /api/drop/item?id=` · `/api/drop/all` | 移除记录 / 清空记录（不删文件） |
 | `GET /guest` | 访客门户（会记一条访问日志） |
 | `GET /guest.json` | 门户文案（改 `guest.json` 生效） |
 | `GET /guest/devices` | 设备看板页面 |
@@ -279,7 +281,7 @@ node server.js --no-kill             # 端口被占时不自动清理
 ## 目录结构
 
 ```
-gallery/
+LocalGallery/
 ├── server.js           服务端（零依赖，单文件）
 ├── start.bat           双击启动（纯 ASCII，不会有乱码）
 ├── stop.bat            释放端口
@@ -288,7 +290,8 @@ gallery/
 ├── config.json         本地配置，首次保存时生成（已 gitignore）
 ├── guest.json          本地门户文案（已 gitignore）
 ├── .guest-log.json     访问记录（已 gitignore）
-├── .drops/             中转站收到的文件（已 gitignore）
+├── .drops.json         中转站登记表（已 gitignore）
+├── .drops/             手机上传的文件落地目录（已 gitignore）
 ├── public/
 │   ├── index.html      图库页面
 │   ├── app.js          前端逻辑
@@ -334,6 +337,15 @@ v1.2 起服务端已设 `requestTimeout = 0`，慢网络也不会被 5 分钟掐
 ---
 
 ## 更新日志
+
+### v1.4 · 2026-11-05
+
+- **中转站改成路径引用**：不再把文件复制到固定目录，只登记「路径 + 大小 + mtime + md5」，下载时从原路径流式读
+- 新增 `POST /api/drop/add`（按路径登记，支持一次多个）、`POST /api/drop/verify`（重算 md5 比对）
+- 移除 / 清空改为**只删记录**，磁盘上的原文件一个都不动
+- 列表每条实时 stat，文件被删标「文件不在了」、被改标「已变更」
+- 新增「浏览文件…」服务端文件选择器（`/api/browse?files=1`）
+- 上传仍然保留，但只有它会写盘；上传完同样登记进列表
 
 ### v1.3 · 2026-11-05
 
